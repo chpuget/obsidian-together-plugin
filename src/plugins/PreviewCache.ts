@@ -12,24 +12,30 @@ export interface ParsedPreviewMeta {
 
 export class PreviewCache {
   private readonly _fs: any;
+  private readonly _available: boolean;
 
   constructor(
-    private readonly _basePath: string,
+    private readonly _basePath: string | null,
     fs?: any,
   ) {
-    this._fs = fs ?? PreviewCache._requireFs();
+    this._available = !!_basePath;
+    this._fs = this._available ? (fs ?? PreviewCache._requireFs()) : null;
   }
 
   private static _requireFs(): any {
-    return (typeof require !== 'undefined')
-      ? require('fs')
-      : {
-          existsSync: () => false,
-          readFileSync: () => '',
-          writeFileSync: () => {},
-          mkdirSync: () => {},
-          readdirSync: () => [],
-        };
+    if (typeof require !== 'undefined') {
+      try {
+        const fs = require('fs');
+        if (fs && typeof fs.existsSync === 'function') return fs;
+      } catch { /* mobile */ }
+    }
+    return {
+      existsSync: () => false,
+      readFileSync: () => '',
+      writeFileSync: () => {},
+      mkdirSync: () => {},
+      readdirSync: () => [],
+    };
   }
 
   isCurrent(
@@ -37,6 +43,7 @@ export class PreviewCache {
     serverVersion: string,
     serverPreviewChecksum: string | null,
   ): boolean {
+    if (!this._available) return false;
     const meta = this.readMeta(pluginId);
     if (!meta?.version) return false;
     return (
@@ -51,6 +58,7 @@ export class PreviewCache {
     previewChecksum: string | null,
     urls: { md?: string; jpg?: string; coverJpg?: string },
   ): Promise<void> {
+    if (!this._available) return;
     const fs = this._fs;
     const dir = `${this._basePath}/${pluginId}`;
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -91,11 +99,13 @@ export class PreviewCache {
   }
 
   getFilePath(pluginId: string, filename: string): string | null {
+    if (!this._available) return null;
     const p = `${this._basePath}/${pluginId}/${filename}`;
     return this._fs.existsSync(p) ? p : null;
   }
 
   readMeta(pluginId: string): ParsedPreviewMeta | null {
+    if (!this._available) return null;
     const p = `${this._basePath}/${pluginId}/${pluginId}.md`;
     if (!this._fs.existsSync(p)) return null;
     try {
@@ -106,6 +116,7 @@ export class PreviewCache {
   }
 
   listCachedIds(): string[] {
+    if (!this._available) return [];
     if (!this._fs.existsSync(this._basePath)) return [];
     try {
       const entries: string[] = this._fs.readdirSync(this._basePath) ?? [];

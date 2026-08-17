@@ -58,7 +58,7 @@ export class PluginManager {
       const adapter = (this.opts.app.vault.adapter as any);
       const base: string = adapter.basePath ?? adapter.getBasePath?.() ?? '';
       this._previewCache = new PreviewCache(
-        `${base}/.obsidian/plugins/obsidian-together/previews`,
+        base ? `${base}/.obsidian/plugins/obsidian-together/previews` : null,
       );
     }
     return this._previewCache;
@@ -131,13 +131,10 @@ export class PluginManager {
       if (!installed || installed !== tcInfo.version) {
         await this.downloadPlugin(tcInfo);
       }
-    } else {
-      // Offline or no server data — try loading from disk if bundle exists
     }
     if (!this._loadedPlugins.has('together-community')) {
       const bundlePath = this._resolvedBundlePath('together-community');
-      const fs = this._requireFs();
-      if (fs.existsSync(bundlePath)) {
+      if (await this._bundleExists(bundlePath)) {
         await this.loadPlugin('together-community');
       }
     }
@@ -147,10 +144,10 @@ export class PluginManager {
     if (authState.username) {
       const enabledIds = await this._readEnabledPluginsFromVault(authState.username);
       for (const id of enabledIds) {
-        if (id === 'together-community') continue; // already handled
+        if (id === 'together-community') continue;
+        if (this._loadedPlugins.has(id)) continue;
         const bundlePath = this._resolvedBundlePath(id);
-        const fs = this._requireFs();
-        if (fs.existsSync(bundlePath) && !this._loadedPlugins.has(id)) {
+        if (await this._bundleExists(bundlePath)) {
           try { await this.loadPlugin(id); } catch (e) { console.error(`PluginManager: failed to load ${id}:`, e); }
         }
       }
@@ -168,17 +165,14 @@ export class PluginManager {
     });
     if (!r.ok) throw new Error(`Download failed for ${info.id}: HTTP ${r.status}`);
 
-    const arrayBuf = await r.arrayBuffer();
-    const buffer = typeof Buffer !== 'undefined'
-      ? Buffer.from(arrayBuf)
-      : new Uint8Array(arrayBuf) as any;
+    const code = await r.text();
     const dir = this._subPluginsDir();
-    const fs = this._requireFs();
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(this._bundlePath(info.id), buffer);
-    fs.writeFileSync(this._versionPath(info.id), info.version, 'utf-8');
+    const adapter = this.opts.app.vault.adapter;
+    if (!(await adapter.exists(dir))) await adapter.mkdir(dir);
+    await adapter.write(this._bundlePath(info.id), code);
+    await adapter.write(this._versionPath(info.id), info.version);
     if (info.buildDate) {
-      fs.writeFileSync(this._buildDatePath(info.id), info.buildDate, 'utf-8');
+      await adapter.write(this._buildDatePath(info.id), info.buildDate);
       this._installedBuildDates[info.id] = info.buildDate;
     }
     this._installedVersions[info.id] = info.version;
@@ -187,8 +181,19 @@ export class PluginManager {
   async loadPlugin(id: string): Promise<void> {
     if (this._loadedPlugins.has(id)) return;
     const bundlePath = this._resolvedBundlePath(id);
-    const fs = this._requireFs();
-    if (!fs.existsSync(bundlePath)) throw new Error(`Bundle not found: ${bundlePath}`);
+
+    const settings = this.opts.getSettings();
+    let code: string;
+    if (settings.devMode) {
+      const fs = this._requireFs();
+      if (!fs.existsSync(bundlePath)) throw new Error(`Bundle not found: ${bundlePath}`);
+      code = fs.readFileSync(bundlePath, 'utf-8');
+    } else {
+      if (!(await this.opts.app.vault.adapter.exists(bundlePath))) {
+        throw new Error(`Bundle not found: ${bundlePath}`);
+      }
+      code = await this.opts.app.vault.adapter.read(bundlePath);
+    }
 
     const nodeRequire = typeof require !== 'undefined' ? require : null;
 
@@ -205,7 +210,6 @@ export class PluginManager {
       try { delete nodeRequire.cache?.[nodeRequire.resolve?.(bundlePath) ?? bundlePath]; } catch { /* ignore */ }
     }
 
-    const code = fs.readFileSync(bundlePath, 'utf-8');
     const fakeModule: { exports: any } = { exports: {} };
     const subRequire = (m: string) => {
       if (m === 'obsidian') return obsidianMod;
@@ -282,8 +286,15 @@ export class PluginManager {
 
   // ── Private helpers ───────────────────────────────────────────────────────────
 
+  /** Only used in devMode where absolute paths and Node fs are needed. */
   private _requireFs(): any {
-    return (typeof require !== 'undefined') ? require('fs') : {
+    if (typeof require !== 'undefined') {
+      try {
+        const fs = require('fs');
+        if (fs && typeof fs.existsSync === 'function') return fs;
+      } catch { /* mobile */ }
+    }
+    return {
       existsSync: () => false,
       readFileSync: () => '',
       writeFileSync: () => {},
@@ -292,14 +303,20 @@ export class PluginManager {
     };
   }
 
+  /** Check if a bundle exists — uses vault adapter for non-devMode, fs for devMode. */
+  private async _bundleExists(bundlePath: string): Promise<boolean> {
+    const settings = this.opts.getSettings();
+    if (settings.devMode) return this._requireFs().existsSync(bundlePath);
+    return this.opts.app.vault.adapter.exists(bundlePath);
+  }
+
   private _subPluginsDir(): string {
     const settings = this.opts.getSettings();
     if (settings.devMode && settings.devRepoRoot) {
-      return settings.devRepoRoot + '/apps'; // not used in dev mode (paths resolved per plugin)
+      return settings.devRepoRoot + '/apps';
     }
-    const adapter = (this.opts.app.vault.adapter as any);
-    const base: string = adapter.basePath ?? adapter.getBasePath?.() ?? '';
-    return base + '/.obsidian/plugins/obsidian-together/sub-plugins';
+    // vault-relative path — works on both desktop and mobile via vault.adapter
+    return '.obsidian/plugins/obsidian-together/sub-plugins';
   }
 
   private _bundlePath(id: string): string {
@@ -346,7 +363,7 @@ export class PluginManager {
   private async _loadInstalledVersions(): Promise<void> {
     const settings = this.opts.getSettings();
     if (settings.devMode) {
-      // In dev mode, read version.json from repo
+      // In dev mode, read version.json from repo using Node fs
       const fs = this._requireFs();
       for (const id of ['together-community', 'games', 'music-band']) {
         const vp = `${settings.devRepoRoot}/apps/${id}/version.json`;
@@ -361,23 +378,23 @@ export class PluginManager {
       return;
     }
 
-    // Non-dev path: scan directory for *.version files
+    // Non-dev: scan vault-relative sub-plugins directory for *.version files
     const dir = this._subPluginsDir();
-    const fs = this._requireFs();
-    if (!fs.existsSync(dir)) return;
-    const files: string[] = fs.readdirSync ? fs.readdirSync(dir) : [];
-    for (const file of files) {
+    const adapter = this.opts.app.vault.adapter;
+    if (!(await adapter.exists(dir))) return;
+    const { files } = await adapter.list(dir);
+    for (const filePath of files) {
+      const file = filePath.split('/').pop()!;
       if (!file.endsWith('.version')) continue;
       const id = file.slice(0, -'.version'.length);
       try {
-        const version = (fs.readFileSync(`${dir}/${file}`, 'utf-8') as string).trim();
+        const version = (await adapter.read(filePath)).trim();
         if (version) this._installedVersions[id] = version;
       } catch { /* ignore */ }
-      // Read corresponding .builddate file if present
       try {
         const bdPath = `${dir}/${id}.builddate`;
-        if (fs.existsSync(bdPath)) {
-          const buildDate = (fs.readFileSync(bdPath, 'utf-8') as string).trim();
+        if (await adapter.exists(bdPath)) {
+          const buildDate = (await adapter.read(bdPath)).trim();
           if (buildDate) this._installedBuildDates[id] = buildDate;
         }
       } catch { /* ignore */ }
