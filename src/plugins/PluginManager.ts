@@ -57,8 +57,12 @@ export class PluginManager {
     if (!this._previewCache) {
       const adapter = (this.opts.app.vault.adapter as any);
       const base: string = adapter.basePath ?? adapter.getBasePath?.() ?? '';
+      const vaultBase = '.obsidian/plugins/obsidian-together/previews';
       this._previewCache = new PreviewCache(
-        base ? `${base}/.obsidian/plugins/obsidian-together/previews` : null,
+        base ? `${base}/${vaultBase}` : null,
+        undefined,
+        adapter,
+        vaultBase,
       );
     }
     return this._previewCache;

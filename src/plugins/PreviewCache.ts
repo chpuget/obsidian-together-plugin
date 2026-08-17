@@ -13,13 +13,17 @@ export interface ParsedPreviewMeta {
 export class PreviewCache {
   private readonly _fs: any;
   private readonly _available: boolean;
+  private readonly _metaCache = new Map<string, ParsedPreviewMeta>();
+  private readonly _bodyCache = new Map<string, string>();
 
   constructor(
     private readonly _basePath: string | null,
     fs?: any,
+    private readonly _adapter?: any,
+    private readonly _vaultBase?: string,
   ) {
-    this._available = !!_basePath;
-    this._fs = this._available ? (fs ?? PreviewCache._requireFs()) : null;
+    this._available = !!(_basePath || (_adapter && _vaultBase));
+    this._fs = _basePath ? (fs ?? PreviewCache._requireFs()) : PreviewCache._requireFs();
   }
 
   private static _requireFs(): any {
@@ -44,7 +48,7 @@ export class PreviewCache {
     serverPreviewChecksum: string | null,
   ): boolean {
     if (!this._available) return false;
-    const meta = this.readMeta(pluginId);
+    const meta = this._metaCache.get(pluginId) ?? this._readMetaFromFs(pluginId);
     if (!meta?.version) return false;
     return (
       meta.version === serverVersion &&
@@ -59,72 +63,148 @@ export class PreviewCache {
     urls: { md?: string; jpg?: string; coverJpg?: string },
   ): Promise<void> {
     if (!this._available) return;
+
+    if (this._adapter && this._vaultBase) {
+      await this._refreshViaAdapter(pluginId, version, previewChecksum, urls);
+    } else if (this._basePath) {
+      await this._refreshViaFs(pluginId, version, previewChecksum, urls);
+    }
+  }
+
+  private async _refreshViaAdapter(
+    pluginId: string,
+    version: string,
+    previewChecksum: string | null,
+    urls: { md?: string; jpg?: string; coverJpg?: string },
+  ): Promise<void> {
+    const adapter = this._adapter;
+    const baseDir = this._vaultBase!;
+    const dir = `${baseDir}/${pluginId}`;
+
+    if (!(await adapter.exists(baseDir))) await adapter.mkdir(baseDir);
+    if (!(await adapter.exists(dir))) await adapter.mkdir(dir);
+
+    if (urls.jpg) {
+      const ab = await this._downloadBinary(urls.jpg);
+      if (ab) await adapter.writeBinary(`${dir}/${pluginId}.jpg`, ab);
+    }
+    if (urls.coverJpg) {
+      const ab = await this._downloadBinary(urls.coverJpg);
+      if (ab) await adapter.writeBinary(`${dir}/${pluginId}.cover.jpg`, ab);
+    }
+    if (urls.md) {
+      const r = await fetch(urls.md);
+      if (!r.ok) throw new Error(`PreviewCache: HTTP ${r.status} for ${urls.md}`);
+      const mdContent = this._injectFrontmatterFields(await r.text(), version, previewChecksum);
+      await adapter.write(`${dir}/${pluginId}.md`, mdContent);
+      const meta = parseFrontmatter(mdContent);
+      if (meta) this._metaCache.set(pluginId, meta);
+      this._bodyCache.set(pluginId, mdContent.replace(/^---\n[\s\S]*?\n---\n?/, '').trim());
+    }
+  }
+
+  private async _refreshViaFs(
+    pluginId: string,
+    version: string,
+    previewChecksum: string | null,
+    urls: { md?: string; jpg?: string; coverJpg?: string },
+  ): Promise<void> {
     const fs = this._fs;
     const dir = `${this._basePath}/${pluginId}`;
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-    const download = async (url: string): Promise<Buffer | null> => {
-      try {
-        const r = await fetch(url);
-        if (!r.ok) {
-          console.warn(`PreviewCache: HTTP ${r.status} for ${url}`);
-          return null;
-        }
-        const ab = await r.arrayBuffer();
-        return typeof Buffer !== 'undefined'
-          ? Buffer.from(ab)
-          : (new Uint8Array(ab) as any);
-      } catch (e) {
-        console.warn(`PreviewCache: failed to fetch ${url}:`, e);
-        return null;
-      }
-    };
-
     if (urls.jpg) {
-      const buf = await download(urls.jpg);
-      if (buf) fs.writeFileSync(`${dir}/${pluginId}.jpg`, buf);
+      const ab = await this._downloadBinary(urls.jpg);
+      if (ab) fs.writeFileSync(`${dir}/${pluginId}.jpg`, Buffer.from(ab));
     }
     if (urls.coverJpg) {
-      const buf = await download(urls.coverJpg);
-      if (buf) fs.writeFileSync(`${dir}/${pluginId}.cover.jpg`, buf);
+      const ab = await this._downloadBinary(urls.coverJpg);
+      if (ab) fs.writeFileSync(`${dir}/${pluginId}.cover.jpg`, Buffer.from(ab));
     }
-
     if (urls.md) {
       const r = await fetch(urls.md);
       if (!r.ok) throw new Error(`PreviewCache: HTTP ${r.status} for ${urls.md}`);
-      const mdText = await r.text();
-      const mdContent = this._injectFrontmatterFields(mdText, version, previewChecksum);
+      const mdContent = this._injectFrontmatterFields(await r.text(), version, previewChecksum);
       fs.writeFileSync(`${dir}/${pluginId}.md`, mdContent, 'utf-8');
+      const meta = parseFrontmatter(mdContent);
+      if (meta) this._metaCache.set(pluginId, meta);
+      this._bodyCache.set(pluginId, mdContent.replace(/^---\n[\s\S]*?\n---\n?/, '').trim());
+    }
+  }
+
+  private async _downloadBinary(url: string): Promise<ArrayBuffer | null> {
+    try {
+      const r = await fetch(url);
+      if (!r.ok) {
+        console.warn(`PreviewCache: HTTP ${r.status} for ${url}`);
+        return null;
+      }
+      return r.arrayBuffer();
+    } catch (e) {
+      console.warn(`PreviewCache: failed to fetch ${url}:`, e);
+      return null;
     }
   }
 
   getFilePath(pluginId: string, filename: string): string | null {
     if (!this._available) return null;
+    if (this._vaultBase) {
+      const vaultPath = `${this._vaultBase}/${pluginId}/${filename}`;
+      if (this._basePath && this._fs) {
+        const absPath = `${this._basePath}/${pluginId}/${filename}`;
+        return this._fs.existsSync(absPath) ? vaultPath : null;
+      }
+      return vaultPath;
+    }
     const p = `${this._basePath}/${pluginId}/${filename}`;
     return this._fs.existsSync(p) ? p : null;
   }
 
   readMeta(pluginId: string): ParsedPreviewMeta | null {
     if (!this._available) return null;
+    return this._metaCache.get(pluginId) ?? this._readMetaFromFs(pluginId);
+  }
+
+  readBody(pluginId: string): string | null {
+    if (!this._available) return null;
+    const cached = this._bodyCache.get(pluginId);
+    if (cached !== undefined) return cached || null;
+    if (this._basePath && this._fs) {
+      const p = `${this._basePath}/${pluginId}/${pluginId}.md`;
+      if (this._fs.existsSync(p)) {
+        try {
+          const body = (this._fs.readFileSync(p, 'utf-8') as string)
+            .replace(/^---\n[\s\S]*?\n---\n?/, '').trim();
+          this._bodyCache.set(pluginId, body);
+          return body;
+        } catch { }
+      }
+    }
+    return null;
+  }
+
+  listCachedIds(): string[] {
+    if (!this._available) return [];
+    const ids = new Set<string>(this._metaCache.keys());
+    if (this._basePath && this._fs.existsSync(this._basePath)) {
+      try {
+        const entries: string[] = this._fs.readdirSync(this._basePath) ?? [];
+        entries
+          .filter((e: string) => this._fs.existsSync(`${this._basePath}/${e}/${e}.md`))
+          .forEach((e: string) => ids.add(e));
+      } catch { }
+    }
+    return [...ids];
+  }
+
+  private _readMetaFromFs(pluginId: string): ParsedPreviewMeta | null {
+    if (!this._basePath || !this._fs) return null;
     const p = `${this._basePath}/${pluginId}/${pluginId}.md`;
     if (!this._fs.existsSync(p)) return null;
     try {
       return parseFrontmatter(this._fs.readFileSync(p, 'utf-8') as string);
     } catch {
       return null;
-    }
-  }
-
-  listCachedIds(): string[] {
-    if (!this._available) return [];
-    if (!this._fs.existsSync(this._basePath)) return [];
-    try {
-      const entries: string[] = this._fs.readdirSync(this._basePath) ?? [];
-      return entries.filter((e: string) =>
-        this._fs.existsSync(`${this._basePath}/${e}/${e}.md`),
-      );
-    } catch {
-      return [];
     }
   }
 
