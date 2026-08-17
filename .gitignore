@@ -2,3 +2,4 @@ main.js
 data.json
 node_modules/
 dist/
+pnpm-workspace.yaml
