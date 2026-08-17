@@ -1,0 +1,386 @@
+import type { App } from 'obsidian';
+import type { TogetherSettings, AuthState, PluginInfo } from '../types';
+import { PreviewCache } from './PreviewCache';
+
+export interface PluginManagerOptions {
+  app: App;
+  getSettings: () => TogetherSettings;
+  getAuth: () => AuthState;
+}
+
+export function parseVersion(v: string): { major: number; minor: number; build: number } | null {
+  const parts = v.split('.').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return null;
+  return { major: parts[0], minor: parts[1], build: parts[2] };
+}
+
+export class PluginManager {
+  private _availablePlugins: PluginInfo[] = [];
+  private _installedVersions: Record<string, string> = {};
+  private _installedBuildDates: Record<string, string> = {};
+  private _loadedPlugins = new Map<string, any>();
+  private _loadingPromise: Promise<void> | null = null;
+  private _previewCache: PreviewCache | null = null;
+  isOnline = false;
+
+  constructor(private readonly opts: PluginManagerOptions) {}
+
+  // ── Public API ────────────────────────────────────────────────────────────────
+
+  getAvailablePlugins(): PluginInfo[] { return this._availablePlugins; }
+
+  getLoadedPluginIds(): string[] { return [...this._loadedPlugins.keys()]; }
+
+  getInstalledVersions(): { id: string; version: string; buildDate?: string }[] {
+    return Object.entries(this._installedVersions).map(([id, version]) => ({
+      id,
+      version,
+      buildDate: this._installedBuildDates[id],
+    }));
+  }
+
+  hasUpdate(id: string): boolean {
+    const avail = this._availablePlugins.find((p) => p.id === id);
+    if (!avail) return false;
+    if (avail.roadmap) return false;
+    const installed = this._installedVersions[id];
+    if (!installed) return true;
+    const ip = parseVersion(installed);
+    const ap = parseVersion(avail.version);
+    if (!ip || !ap) return installed !== avail.version;
+    if (ap.major !== ip.major) return ap.major > ip.major;
+    if (ap.minor !== ip.minor) return ap.minor > ip.minor;
+    return ap.build > ip.build;
+  }
+
+  getPreviewCache(): PreviewCache {
+    if (!this._previewCache) {
+      const adapter = (this.opts.app.vault.adapter as any);
+      const base: string = adapter.basePath ?? adapter.getBasePath?.() ?? '';
+      this._previewCache = new PreviewCache(
+        `${base}/.obsidian/plugins/obsidian-together/previews`,
+      );
+    }
+    return this._previewCache;
+  }
+
+  /** Lightweight refresh: re-fetches the available-plugins list from the server and
+   *  updates _availablePlugins so hasUpdate() reflects the latest versions.
+   *  Called after each periodic sync so the UI shows available updates without restart. */
+  async refreshAvailablePlugins(): Promise<void> {
+    const auth = this.opts.getAuth();
+    if (!auth.isLoggedIn || !auth.serverUrl || !auth.token) return;
+    try {
+      const r = await fetch(`${auth.serverUrl}/plugins`, {
+        headers: { Authorization: `Bearer ${auth.token}` },
+      });
+      if (r.ok) {
+        this._availablePlugins = await r.json() as PluginInfo[];
+        this.isOnline = true;
+      }
+    } catch {
+      this.isOnline = false;
+    }
+  }
+
+  async ensurePluginsLoaded(): Promise<void> {
+    if (this._loadingPromise) return this._loadingPromise;
+    this._loadingPromise = this._ensurePluginsLoadedImpl();
+    try {
+      await this._loadingPromise;
+    } finally {
+      this._loadingPromise = null;
+    }
+  }
+
+  private async _ensurePluginsLoadedImpl(): Promise<void> {
+    const { getAuth } = this.opts;
+    const auth = getAuth();
+
+    // Only hit the server when fully authenticated
+    if (auth.isLoggedIn && auth.serverUrl && auth.token) {
+      try {
+        const r = await fetch(`${auth.serverUrl}/plugins`, {
+          headers: { Authorization: `Bearer ${auth.token}` },
+        });
+        if (r.ok) {
+          this._availablePlugins = await r.json() as PluginInfo[];
+          this.isOnline = true;
+          const cache = this.getPreviewCache();
+          for (const info of this._availablePlugins) {
+            if (!cache.isCurrent(info.id, info.version, info.previewChecksum)) {
+              cache.refresh(info.id, info.version, info.previewChecksum, info.previewUrls)
+                .catch((e) => console.warn(`PluginManager: preview refresh failed for ${info.id}:`, e));
+            }
+          }
+        } else {
+          this.isOnline = false;
+        }
+      } catch {
+        this.isOnline = false;
+      }
+    }
+
+    // Load installed versions from disk
+    await this._loadInstalledVersions();
+
+    // together-community is always required
+    const tcInfo = this._availablePlugins.find((p) => p.id === 'together-community');
+    if (tcInfo) {
+      const installed = this._installedVersions['together-community'];
+      if (!installed || installed !== tcInfo.version) {
+        await this.downloadPlugin(tcInfo);
+      }
+    } else {
+      // Offline or no server data — try loading from disk if bundle exists
+    }
+    if (!this._loadedPlugins.has('together-community')) {
+      const bundlePath = this._resolvedBundlePath('together-community');
+      const fs = this._requireFs();
+      if (fs.existsSync(bundlePath)) {
+        await this.loadPlugin('together-community');
+      }
+    }
+
+    // Load optional plugins the user previously enabled
+    const authState = this.opts.getAuth();
+    if (authState.username) {
+      const enabledIds = await this._readEnabledPluginsFromVault(authState.username);
+      for (const id of enabledIds) {
+        if (id === 'together-community') continue; // already handled
+        const bundlePath = this._resolvedBundlePath(id);
+        const fs = this._requireFs();
+        if (fs.existsSync(bundlePath) && !this._loadedPlugins.has(id)) {
+          try { await this.loadPlugin(id); } catch (e) { console.error(`PluginManager: failed to load ${id}:`, e); }
+        }
+      }
+    }
+  }
+
+  async downloadPlugin(info: PluginInfo): Promise<void> {
+    const settings = this.opts.getSettings();
+    if (settings.devMode) return; // dev mode: skip download, load from disk directly
+
+    const auth = this.opts.getAuth();
+    const downloadUrl = `${auth.serverUrl}/plugins/${info.id}/download`;
+    const r = await fetch(downloadUrl, {
+      headers: { Authorization: `Bearer ${auth.token}` },
+    });
+    if (!r.ok) throw new Error(`Download failed for ${info.id}: HTTP ${r.status}`);
+
+    const arrayBuf = await r.arrayBuffer();
+    const buffer = typeof Buffer !== 'undefined'
+      ? Buffer.from(arrayBuf)
+      : new Uint8Array(arrayBuf) as any;
+    const dir = this._subPluginsDir();
+    const fs = this._requireFs();
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(this._bundlePath(info.id), buffer);
+    fs.writeFileSync(this._versionPath(info.id), info.version, 'utf-8');
+    if (info.buildDate) {
+      fs.writeFileSync(this._buildDatePath(info.id), info.buildDate, 'utf-8');
+      this._installedBuildDates[info.id] = info.buildDate;
+    }
+    this._installedVersions[info.id] = info.version;
+  }
+
+  async loadPlugin(id: string): Promise<void> {
+    if (this._loadedPlugins.has(id)) return;
+    const bundlePath = this._resolvedBundlePath(id);
+    const fs = this._requireFs();
+    if (!fs.existsSync(bundlePath)) throw new Error(`Bundle not found: ${bundlePath}`);
+
+    const nodeRequire = typeof require !== 'undefined' ? require : null;
+
+    // Capture obsidian here, in plugin-core's module context where it resolves correctly.
+    // Sub-plugin bundles call require('obsidian') but Node can't resolve it for child modules;
+    // we hand it explicitly via the shim below.
+    let obsidianMod: any = {};
+    if (nodeRequire) {
+      try { obsidianMod = nodeRequire('obsidian'); } catch { /* mobile */ }
+    }
+
+    // Clear the cache entry so reloads pick up new code.
+    if (nodeRequire) {
+      try { delete nodeRequire.cache?.[nodeRequire.resolve?.(bundlePath) ?? bundlePath]; } catch { /* ignore */ }
+    }
+
+    const code = fs.readFileSync(bundlePath, 'utf-8');
+    const fakeModule: { exports: any } = { exports: {} };
+    const subRequire = (m: string) => {
+      if (m === 'obsidian') return obsidianMod;
+      if (nodeRequire) { try { return nodeRequire(m); } catch { return {}; } }
+      return {};
+    };
+    new Function('module', 'exports', 'require', code)(fakeModule, fakeModule.exports, subRequire);
+
+    const Klass = fakeModule.exports?.default ?? fakeModule.exports;
+    if (!Klass) throw new Error(`No default export in ${id} bundle`);
+
+    const info = this._availablePlugins.find((p) => p.id === id);
+    const manifest = {
+      id,
+      name: info?.name ?? id,
+      version: info?.version ?? '0.0.0',
+      minAppVersion: '1.0.0',
+      description: info?.description ?? '',
+      author: 'Obsidian Together',
+      authorUrl: '',
+      isDesktopOnly: false,
+    };
+
+    const instance = new Klass(this.opts.app, manifest);
+    await instance.load();
+    this._loadedPlugins.set(id, instance);
+  }
+
+  async unloadPlugin(id: string): Promise<void> {
+    const instance = this._loadedPlugins.get(id);
+    if (instance) {
+      try { instance.unload?.(); } catch (e) { console.error(`PluginManager: error unloading ${id}:`, e); }
+      this._loadedPlugins.delete(id);
+    }
+    if (typeof document !== 'undefined') {
+      document.querySelector(`style[data-plugin-id="${id}"]`)?.remove();
+    }
+  }
+
+  async reloadAll(): Promise<void> {
+    const ids = [...this._loadedPlugins.keys()];
+    for (const id of ids) await this.unloadPlugin(id);
+    for (const id of ids) await this.loadPlugin(id);
+  }
+
+  async syncEnabledPlugins(username: string): Promise<void> {
+    const enabledInVault = await this._readEnabledPluginsFromVault(username);
+
+    const optionalLoaded = [...this._loadedPlugins.keys()].filter(id => id !== 'together-community');
+    for (const id of optionalLoaded) {
+      if (!enabledInVault.includes(id)) {
+        await this.unloadPlugin(id);
+      }
+    }
+
+    for (const id of enabledInVault) {
+      if (id === 'together-community') continue;
+      if (this._loadedPlugins.has(id)) continue;
+      const info = this._availablePlugins.find(p => p.id === id);
+      if (!info) continue;
+      try {
+        if (this.isOnline) {
+          const installed = this._installedVersions[id];
+          if (!installed || installed !== info.version) {
+            await this.downloadPlugin(info);
+          }
+        }
+        await this.loadPlugin(id);
+      } catch (e) {
+        console.error(`PluginManager: failed to sync plugin ${id}:`, e);
+      }
+    }
+  }
+
+  // ── Private helpers ───────────────────────────────────────────────────────────
+
+  private _requireFs(): any {
+    return (typeof require !== 'undefined') ? require('fs') : {
+      existsSync: () => false,
+      readFileSync: () => '',
+      writeFileSync: () => {},
+      mkdirSync: () => {},
+      readdirSync: () => [],
+    };
+  }
+
+  private _subPluginsDir(): string {
+    const settings = this.opts.getSettings();
+    if (settings.devMode && settings.devRepoRoot) {
+      return settings.devRepoRoot + '/apps'; // not used in dev mode (paths resolved per plugin)
+    }
+    const adapter = (this.opts.app.vault.adapter as any);
+    const base: string = adapter.basePath ?? adapter.getBasePath?.() ?? '';
+    return base + '/.obsidian/plugins/obsidian-together/sub-plugins';
+  }
+
+  private _bundlePath(id: string): string {
+    return this._subPluginsDir() + `/${id}.js`;
+  }
+
+  private _buildDatePath(id: string): string {
+    return this._subPluginsDir() + `/${id}.builddate`;
+  }
+
+  private _versionPath(id: string): string {
+    return this._subPluginsDir() + `/${id}.version`;
+  }
+
+  private _resolvedBundlePath(id: string): string {
+    const settings = this.opts.getSettings();
+    if (settings.devMode && settings.devRepoRoot) {
+      return `${settings.devRepoRoot}/apps/${id}/main.js`;
+    }
+    return this._bundlePath(id);
+  }
+
+  private async _readEnabledPluginsFromVault(username: string): Promise<string[]> {
+    try {
+      const userFilePath = `The Hub/users/${username}.md`;
+      const exists = await this.opts.app.vault.adapter.exists(userFilePath);
+      if (!exists) return [];
+      const content = await this.opts.app.vault.adapter.read(userFilePath);
+      // Simple frontmatter parse — extract enabledPlugins array
+      const match = content.match(/^---\n([\s\S]*?)\n---/);
+      if (!match) return [];
+      const fm = match[1];
+      const listMatch = fm.match(/enabledPlugins:\s*\n((?:\s*-\s*.+\n?)*)/);
+      if (!listMatch) return [];
+      return listMatch[1]
+        .split('\n')
+        .map(l => l.replace(/^\s*-\s*/, '').trim())
+        .filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+
+  private async _loadInstalledVersions(): Promise<void> {
+    const settings = this.opts.getSettings();
+    if (settings.devMode) {
+      // In dev mode, read version.json from repo
+      const fs = this._requireFs();
+      for (const id of ['together-community', 'games', 'music-band']) {
+        const vp = `${settings.devRepoRoot}/apps/${id}/version.json`;
+        if (fs.existsSync(vp)) {
+          try {
+            const v = JSON.parse(fs.readFileSync(vp, 'utf-8'));
+            this._installedVersions[id] = `${v.major}.${v.minor}.${v.build}`;
+            if (v.buildDate) this._installedBuildDates[id] = v.buildDate;
+          } catch { /* ignore */ }
+        }
+      }
+      return;
+    }
+
+    // Non-dev path: scan directory for *.version files
+    const dir = this._subPluginsDir();
+    const fs = this._requireFs();
+    if (!fs.existsSync(dir)) return;
+    const files: string[] = fs.readdirSync ? fs.readdirSync(dir) : [];
+    for (const file of files) {
+      if (!file.endsWith('.version')) continue;
+      const id = file.slice(0, -'.version'.length);
+      try {
+        const version = (fs.readFileSync(`${dir}/${file}`, 'utf-8') as string).trim();
+        if (version) this._installedVersions[id] = version;
+      } catch { /* ignore */ }
+      // Read corresponding .builddate file if present
+      try {
+        const bdPath = `${dir}/${id}.builddate`;
+        if (fs.existsSync(bdPath)) {
+          const buildDate = (fs.readFileSync(bdPath, 'utf-8') as string).trim();
+          if (buildDate) this._installedBuildDates[id] = buildDate;
+        }
+      } catch { /* ignore */ }
+    }
+  }
+}
