@@ -81,6 +81,12 @@ export class PluginManager {
       if (r.ok) {
         this._availablePlugins = await r.json() as PluginInfo[];
         this.isOnline = true;
+        const cache = this.getPreviewCache();
+        const refreshes = this._availablePlugins
+          .filter(info => !cache.isCurrent(info.id, info.version, info.previewChecksum))
+          .map(info => cache.refresh(info.id, info.version, info.previewChecksum, info.previewUrls)
+            .catch((e) => console.warn(`PluginManager: preview refresh failed for ${info.id}:`, e)));
+        if (refreshes.length > 0) await Promise.allSettled(refreshes);
       }
     } catch {
       this.isOnline = false;
