@@ -68,6 +68,20 @@ export class PluginManager {
     return this._previewCache;
   }
 
+  /** Update the available-plugins list and refresh any stale preview cache entries using
+   *  the supplied data — no extra server call needed, presigned URLs are already in the list.
+   *  Call this when the caller already has a freshly-fetched plugin list (e.g. from HubClient). */
+  async updateFromPluginList(plugins: PluginInfo[]): Promise<void> {
+    this._availablePlugins = plugins;
+    this.isOnline = true;
+    const cache = this.getPreviewCache();
+    const refreshes = plugins
+      .filter(info => !cache.isCurrent(info.id, info.version, info.previewChecksum))
+      .map(info => cache.refresh(info.id, info.version, info.previewChecksum, info.previewUrls)
+        .catch((e) => console.warn(`PluginManager: preview refresh failed for ${info.id}:`, e)));
+    if (refreshes.length > 0) await Promise.allSettled(refreshes);
+  }
+
   /** Lightweight refresh: re-fetches the available-plugins list from the server and
    *  updates _availablePlugins so hasUpdate() reflects the latest versions.
    *  Called after each periodic sync so the UI shows available updates without restart. */
