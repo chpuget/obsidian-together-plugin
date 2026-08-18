@@ -80,13 +80,22 @@ export class PreviewCache {
     const adapter = this._adapter;
     const baseDir = this._vaultBase!;
     const dir = `${baseDir}/${pluginId}`;
+    console.log(`[PreviewCache] refresh ${pluginId}: jpg=${!!urls.jpg} cover=${!!urls.coverJpg} md=${!!urls.md}`);
 
     if (!(await adapter.exists(baseDir))) await adapter.mkdir(baseDir);
     if (!(await adapter.exists(dir))) await adapter.mkdir(dir);
 
     if (urls.jpg) {
       const ab = await this._downloadBinary(urls.jpg);
-      if (ab) await adapter.writeBinary(`${dir}/${pluginId}.jpg`, ab);
+      console.log(`[PreviewCache] jpg ${pluginId}: ${ab ? ab.byteLength + 'b' : 'FAILED'}`);
+      if (ab) {
+        try {
+          await adapter.writeBinary(`${dir}/${pluginId}.jpg`, ab);
+          console.log(`[PreviewCache] jpg ${pluginId}: written ok`);
+        } catch (e) {
+          console.error(`[PreviewCache] jpg ${pluginId}: write failed`, e);
+        }
+      }
     }
     if (urls.coverJpg) {
       const ab = await this._downloadBinary(urls.coverJpg);
@@ -100,6 +109,7 @@ export class PreviewCache {
       const meta = parseFrontmatter(mdContent);
       if (meta) this._metaCache.set(pluginId, meta);
       this._bodyCache.set(pluginId, mdContent.replace(/^---\n[\s\S]*?\n---\n?/, '').trim());
+      console.log(`[PreviewCache] md ${pluginId}: meta=${!!meta}`);
     }
   }
 

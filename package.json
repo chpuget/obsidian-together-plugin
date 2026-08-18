@@ -1,6 +1,6 @@
 {
   "name": "obsidian-together-plugin",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Obsidian Together — Layer 1 core plugin",
   "scripts": {
     "build": "node esbuild.config.mjs",

@@ -75,11 +75,13 @@ export class PluginManager {
     this._availablePlugins = plugins;
     this.isOnline = true;
     const cache = this.getPreviewCache();
-    const refreshes = plugins
-      .filter(info => !cache.isCurrent(info.id, info.version, info.previewChecksum))
+    const stale = plugins.filter(info => !cache.isCurrent(info.id, info.version, info.previewChecksum));
+    console.log(`[PluginManager] updateFromPluginList: ${plugins.length} plugins, ${stale.length} stale`);
+    const refreshes = stale
       .map(info => cache.refresh(info.id, info.version, info.previewChecksum, info.previewUrls)
         .catch((e) => console.warn(`PluginManager: preview refresh failed for ${info.id}:`, e)));
     if (refreshes.length > 0) await Promise.allSettled(refreshes);
+    console.log(`[PluginManager] updateFromPluginList: done`);
   }
 
   /** Lightweight refresh: re-fetches the available-plugins list from the server and
