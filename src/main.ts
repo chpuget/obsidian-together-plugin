@@ -111,13 +111,18 @@ export default class ObsidianTogetherPlugin extends Plugin {
     // Listen for login to trigger plugin loading
     this.eventBus.on('together:account-switched', async ({ username }: { username: string | null }) => {
       if (username) {
-        try { await this.pluginManager.ensurePluginsLoaded(); } catch (e) { console.error('PluginManager.ensurePluginsLoaded failed:', e); }
+        try {
+          await this.pluginManager.ensurePluginsLoaded();
+          this.eventBus.emit('community:plugins-refreshed');
+        } catch (e) { console.error('PluginManager.ensurePluginsLoaded failed:', e); }
       }
     });
 
     // On startup, ensure plugins are loaded from disk even when not logged in
     // (together-community must always run so it can display the login screen).
-    void this.pluginManager.ensurePluginsLoaded().catch((e) => console.error('PluginManager startup load failed:', e));
+    void this.pluginManager.ensurePluginsLoaded()
+      .then(() => this.eventBus.emit('community:plugins-refreshed'))
+      .catch((e) => console.error('PluginManager startup load failed:', e));
 
     console.log("Obsidian Together: loaded (v" + this.manifest.version + ")");
   }
