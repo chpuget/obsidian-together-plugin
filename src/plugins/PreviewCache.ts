@@ -13,6 +13,8 @@ export interface ParsedPreviewMeta {
 export class PreviewCache {
   private readonly _fs: any;
   private readonly _available: boolean;
+  /** True only when Node.js fs is real and operational (desktop). False on mobile even if basePath is set. */
+  private readonly _hasFsAccess: boolean;
   private readonly _metaCache = new Map<string, ParsedPreviewMeta>();
   private readonly _bodyCache = new Map<string, string>();
   /** Mobile-only: tracks which files were actually written to the vault this session. */
@@ -26,6 +28,8 @@ export class PreviewCache {
   ) {
     this._available = !!(_basePath || (_adapter && _vaultBase));
     this._fs = _basePath ? (fs ?? PreviewCache._requireFs()) : PreviewCache._requireFs();
+    this._hasFsAccess = PreviewCache._checkFsIsReal(this._fs);
+    console.log(`[PreviewCache] init: basePath=${!!_basePath} adapter=${!!_adapter} hasFsAccess=${this._hasFsAccess}`);
   }
 
   private static _requireFs(): any {
@@ -44,6 +48,16 @@ export class PreviewCache {
     };
   }
 
+  /** Returns true only when the fs module can actually stat real paths (desktop). */
+  private static _checkFsIsReal(fs: any): boolean {
+    try {
+      const cwd = typeof process !== 'undefined' ? process.cwd?.() : null;
+      return !!cwd && fs.existsSync(cwd) === true;
+    } catch {
+      return false;
+    }
+  }
+
   isCurrent(
     pluginId: string,
     serverVersion: string,
@@ -54,11 +68,13 @@ export class PreviewCache {
     if (!meta?.version) return false;
     if (meta.version !== serverVersion) return false;
     if ((meta.previewChecksum ?? 'none') !== (serverPreviewChecksum ?? 'none')) return false;
-    // On mobile (no direct fs), require that a full refresh ran this session.
-    // Without this, a successful .md download that silently failed on .jpg would
-    // populate _metaCache and make isCurrent() return true, hiding the missing images.
-    if (!this._basePath && this._vaultBase) {
-      return this._imageCache.has(`${pluginId}/__refreshed`);
+    // On mobile, require that a full refresh ran this session.
+    // Android sets adapter.basePath so we can't use !_basePath to detect mobile;
+    // instead we check whether Node fs can actually stat real paths.
+    if (!this._hasFsAccess && this._vaultBase) {
+      const refreshed = this._imageCache.has(`${pluginId}/__refreshed`);
+      if (!refreshed) console.log(`[PreviewCache] isCurrent(${pluginId}): stale — not refreshed this session`);
+      return refreshed;
     }
     return true;
   }
@@ -177,11 +193,11 @@ export class PreviewCache {
     if (!this._available) return null;
     if (this._vaultBase) {
       const vaultPath = `${this._vaultBase}/${pluginId}/${filename}`;
-      if (this._basePath && this._fs) {
+      if (this._hasFsAccess && this._basePath && this._fs) {
         const absPath = `${this._basePath}/${pluginId}/${filename}`;
         return this._fs.existsSync(absPath) ? vaultPath : null;
       }
-      // Mobile-only path: no fs.existsSync, so check whether we wrote the file this session
+      // Mobile: check _imageCache (fs.existsSync unavailable)
       return this._imageCache.has(`${pluginId}/${filename}`) ? vaultPath : null;
     }
     const p = `${this._basePath}/${pluginId}/${filename}`;
