@@ -15,6 +15,8 @@ export class PreviewCache {
   private readonly _available: boolean;
   private readonly _metaCache = new Map<string, ParsedPreviewMeta>();
   private readonly _bodyCache = new Map<string, string>();
+  /** Mobile-only: tracks which files were actually written to the vault this session. */
+  private readonly _imageCache = new Set<string>();
 
   constructor(
     private readonly _basePath: string | null,
@@ -50,10 +52,15 @@ export class PreviewCache {
     if (!this._available) return false;
     const meta = this._metaCache.get(pluginId) ?? this._readMetaFromFs(pluginId);
     if (!meta?.version) return false;
-    return (
-      meta.version === serverVersion &&
-      (meta.previewChecksum ?? 'none') === (serverPreviewChecksum ?? 'none')
-    );
+    if (meta.version !== serverVersion) return false;
+    if ((meta.previewChecksum ?? 'none') !== (serverPreviewChecksum ?? 'none')) return false;
+    // On mobile (no direct fs), require that a full refresh ran this session.
+    // Without this, a successful .md download that silently failed on .jpg would
+    // populate _metaCache and make isCurrent() return true, hiding the missing images.
+    if (!this._basePath && this._vaultBase) {
+      return this._imageCache.has(`${pluginId}/__refreshed`);
+    }
+    return true;
   }
 
   async refresh(
@@ -91,6 +98,7 @@ export class PreviewCache {
       if (ab) {
         try {
           await adapter.writeBinary(`${dir}/${pluginId}.jpg`, ab);
+          this._imageCache.add(`${pluginId}/${pluginId}.jpg`);
           console.log(`[PreviewCache] jpg ${pluginId}: written ok`);
         } catch (e) {
           console.error(`[PreviewCache] jpg ${pluginId}: write failed`, e);
@@ -99,7 +107,14 @@ export class PreviewCache {
     }
     if (urls.coverJpg) {
       const ab = await this._downloadBinary(urls.coverJpg);
-      if (ab) await adapter.writeBinary(`${dir}/${pluginId}.cover.jpg`, ab);
+      if (ab) {
+        try {
+          await adapter.writeBinary(`${dir}/${pluginId}.cover.jpg`, ab);
+          this._imageCache.add(`${pluginId}/${pluginId}.cover.jpg`);
+        } catch (e) {
+          console.error(`[PreviewCache] cover ${pluginId}: write failed`, e);
+        }
+      }
     }
     if (urls.md) {
       const r = await fetch(urls.md);
@@ -111,6 +126,8 @@ export class PreviewCache {
       this._bodyCache.set(pluginId, mdContent.replace(/^---\n[\s\S]*?\n---\n?/, '').trim());
       console.log(`[PreviewCache] md ${pluginId}: meta=${!!meta}`);
     }
+    // Mark this plugin as fully refreshed this session so isCurrent() can trust it
+    this._imageCache.add(`${pluginId}/__refreshed`);
   }
 
   private async _refreshViaFs(
@@ -164,7 +181,8 @@ export class PreviewCache {
         const absPath = `${this._basePath}/${pluginId}/${filename}`;
         return this._fs.existsSync(absPath) ? vaultPath : null;
       }
-      return vaultPath;
+      // Mobile-only path: no fs.existsSync, so check whether we wrote the file this session
+      return this._imageCache.has(`${pluginId}/${filename}`) ? vaultPath : null;
     }
     const p = `${this._basePath}/${pluginId}/${filename}`;
     return this._fs.existsSync(p) ? p : null;
