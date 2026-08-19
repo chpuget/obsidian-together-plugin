@@ -122,16 +122,19 @@ export class PluginManager {
   private async _ensurePluginsLoadedImpl(): Promise<void> {
     const { getAuth } = this.opts;
     const auth = getAuth();
+    console.log(`[PluginManager] ensurePluginsLoaded start — isLoggedIn: ${auth.isLoggedIn}, serverUrl: ${auth.serverUrl ?? 'none'}`);
 
     // Only hit the server when fully authenticated
     if (auth.isLoggedIn && auth.serverUrl && auth.token) {
       try {
+        console.log(`[PluginManager] ensurePluginsLoaded fetching plugin list from server…`);
         const r = await fetch(`${auth.serverUrl}/plugins`, {
           headers: { Authorization: `Bearer ${auth.token}` },
         });
         if (r.ok) {
           this._availablePlugins = await r.json() as PluginInfo[];
           this.isOnline = true;
+          console.log(`[PluginManager] ensurePluginsLoaded fetched ${this._availablePlugins.length} plugins, isOnline: true`);
           const cache = this.getPreviewCache();
           const refreshes = this._availablePlugins
             .filter(info => !cache.isCurrent(info.id, info.version, info.previewChecksum))
@@ -140,43 +143,60 @@ export class PluginManager {
           if (refreshes.length > 0) await Promise.allSettled(refreshes);
         } else {
           this.isOnline = false;
+          console.log(`[PluginManager] ensurePluginsLoaded server responded ${r.status}, isOnline: false`);
         }
-      } catch {
+      } catch (e) {
         this.isOnline = false;
+        console.log(`[PluginManager] ensurePluginsLoaded server unreachable, isOnline: false`, e);
       }
+    } else {
+      console.log(`[PluginManager] ensurePluginsLoaded skipping server fetch (not authenticated)`);
     }
 
     // Load installed versions from disk
     await this._loadInstalledVersions();
+    console.log(`[PluginManager] ensurePluginsLoaded installed versions: ${JSON.stringify(this._installedVersions)}`);
 
     // together-community is always required
     const tcInfo = this._availablePlugins.find((p) => p.id === 'together-community');
     if (tcInfo) {
       const installed = this._installedVersions['together-community'];
       if (!installed || installed !== tcInfo.version) {
+        console.log(`[PluginManager] ensurePluginsLoaded downloading together-community (installed: ${installed ?? 'none'}, available: ${tcInfo.version})`);
         await this.downloadPlugin(tcInfo);
       }
     }
     if (!this._loadedPlugins.has('together-community')) {
       const bundlePath = this._resolvedBundlePath('together-community');
       if (await this._bundleExists(bundlePath)) {
+        console.log(`[PluginManager] ensurePluginsLoaded loading together-community`);
         await this.loadPlugin('together-community');
+        console.log(`[PluginManager] ensurePluginsLoaded together-community loaded`);
+      } else {
+        console.log(`[PluginManager] ensurePluginsLoaded together-community bundle not found on disk`);
       }
+    } else {
+      console.log(`[PluginManager] ensurePluginsLoaded together-community already loaded`);
     }
 
     // Load optional plugins the user previously enabled
     const authState = this.opts.getAuth();
     if (authState.username) {
       const enabledIds = await this._readEnabledPluginsFromVault(authState.username);
+      console.log(`[PluginManager] ensurePluginsLoaded optional plugins for ${authState.username}: [${enabledIds.join(', ')}]`);
       for (const id of enabledIds) {
         if (id === 'together-community') continue;
         if (this._loadedPlugins.has(id)) continue;
         const bundlePath = this._resolvedBundlePath(id);
         if (await this._bundleExists(bundlePath)) {
-          try { await this.loadPlugin(id); } catch (e) { console.error(`PluginManager: failed to load ${id}:`, e); }
+          console.log(`[PluginManager] ensurePluginsLoaded loading optional plugin: ${id}`);
+          try { await this.loadPlugin(id); console.log(`[PluginManager] ensurePluginsLoaded loaded: ${id}`); } catch (e) { console.error(`PluginManager: failed to load ${id}:`, e); }
+        } else {
+          console.log(`[PluginManager] ensurePluginsLoaded skip optional plugin (not on disk): ${id}`);
         }
       }
     }
+    console.log(`[PluginManager] ensurePluginsLoaded done`);
   }
 
   async downloadPlugin(info: PluginInfo): Promise<void> {
@@ -281,32 +301,39 @@ export class PluginManager {
   }
 
   async syncEnabledPlugins(username: string): Promise<void> {
+    console.log(`[PluginManager] syncEnabledPlugins start — user: ${username}`);
     const enabledInVault = await this._readEnabledPluginsFromVault(username);
+    console.log(`[PluginManager] syncEnabledPlugins vault enabled: [${enabledInVault.join(', ')}]`);
 
     const optionalLoaded = [...this._loadedPlugins.keys()].filter(id => id !== 'together-community');
     for (const id of optionalLoaded) {
       if (!enabledInVault.includes(id)) {
+        console.log(`[PluginManager] syncEnabledPlugins unloading removed plugin: ${id}`);
         await this.unloadPlugin(id);
       }
     }
 
     for (const id of enabledInVault) {
       if (id === 'together-community') continue;
-      if (this._loadedPlugins.has(id)) continue;
+      if (this._loadedPlugins.has(id)) { console.log(`[PluginManager] syncEnabledPlugins skip (already loaded): ${id}`); continue; }
       const info = this._availablePlugins.find(p => p.id === id);
-      if (!info) continue;
+      if (!info) { console.log(`[PluginManager] syncEnabledPlugins skip (not in available list): ${id}`); continue; }
       try {
         if (this.isOnline) {
           const installed = this._installedVersions[id];
           if (!installed || installed !== info.version) {
+            console.log(`[PluginManager] syncEnabledPlugins downloading: ${id} (installed: ${installed ?? 'none'}, available: ${info.version})`);
             await this.downloadPlugin(info);
           }
         }
+        console.log(`[PluginManager] syncEnabledPlugins loading: ${id}`);
         await this.loadPlugin(id);
+        console.log(`[PluginManager] syncEnabledPlugins loaded: ${id}`);
       } catch (e) {
         console.error(`PluginManager: failed to sync plugin ${id}:`, e);
       }
     }
+    console.log(`[PluginManager] syncEnabledPlugins done`);
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────────
