@@ -300,6 +300,16 @@ export class PluginManager {
     for (const id of ids) await this.loadPlugin(id);
   }
 
+  unloadAll(): void {
+    for (const [id, instance] of this._loadedPlugins) {
+      try { instance.unload?.(); } catch (e) { console.error(`PluginManager: error unloading ${id}:`, e); }
+      if (typeof document !== 'undefined') {
+        document.querySelector(`style[data-plugin-id="${id}"]`)?.remove();
+      }
+    }
+    this._loadedPlugins.clear();
+  }
+
   async syncEnabledPlugins(username: string): Promise<void> {
     console.log(`[PluginManager] syncEnabledPlugins start — user: ${username}`);
     const enabledInVault = await this._readEnabledPluginsFromVault(username);

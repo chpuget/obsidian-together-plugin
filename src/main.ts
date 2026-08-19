@@ -128,6 +128,7 @@ export default class ObsidianTogetherPlugin extends Plugin {
   }
 
   onunload(): void {
+    this.pluginManager.unloadAll();
     if (this.app.together === this.togetherAPI) {
       delete this.app.together;
     }
