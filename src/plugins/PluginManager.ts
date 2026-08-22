@@ -238,7 +238,9 @@ export class PluginManager {
     const bundlePath = this._bundlePath(id);
     const assetsDir = normalizePath(`${subDir}/${id}/assets`);
 
+    console.log(`[PluginManager] extractPluginZip ${id}: zip buffer size=${zipBuffer.byteLength}`);
     const unzipped = unzipSync(new Uint8Array(zipBuffer));
+    console.log(`[PluginManager] extractPluginZip ${id}: entries=[${Object.keys(unzipped).join(', ')}]`);
 
     // Check for main.js before cleaning old files
     if (!('main.js' in unzipped)) {
@@ -249,7 +251,10 @@ export class PluginManager {
     for (const [relativePath, data] of Object.entries(unzipped)) {
       if (relativePath.endsWith('/')) continue; // skip directory entries from archiver
       if (relativePath === 'main.js') {
-        await adapter.write(bundlePath, strFromU8(data));
+        const content = strFromU8(data);
+        const firstBytes = Array.from(content.slice(0, 8)).map(c => c.charCodeAt(0).toString(16)).join(' ');
+        console.log(`[PluginManager] extractPluginZip ${id}: main.js length=${content.length}, first bytes=[${firstBytes}], preview=${JSON.stringify(content.slice(0, 120))}`);
+        await adapter.write(bundlePath, content);
       } else if (relativePath.startsWith('assets/')) {
         const assetPath = normalizePath(`${subDir}/${id}/${relativePath}`);
         const parentDir = assetPath.substring(0, assetPath.lastIndexOf('/'));
@@ -297,6 +302,9 @@ export class PluginManager {
     if (nodeRequire) {
       try { delete nodeRequire.cache?.[nodeRequire.resolve?.(bundlePath) ?? bundlePath]; } catch { /* ignore */ }
     }
+
+    const firstBytes = Array.from(code.slice(0, 8)).map(c => c.charCodeAt(0).toString(16)).join(' ');
+    console.log(`[PluginManager] loadPlugin ${id}: code length=${code.length}, first bytes=[${firstBytes}], preview=${JSON.stringify(code.slice(0, 120))}`);
 
     const fakeModule: { exports: any } = { exports: {} };
     const subRequire = (m: string) => {
