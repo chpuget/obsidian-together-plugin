@@ -249,6 +249,7 @@ export class PluginManager {
     }
 
     for (const [relativePath, data] of Object.entries(unzipped)) {
+      if (relativePath.endsWith('/')) continue; // skip directory entries from archiver
       if (relativePath === 'main.js') {
         await adapter.write(bundlePath, strFromU8(data));
       } else if (relativePath.startsWith('assets/')) {
