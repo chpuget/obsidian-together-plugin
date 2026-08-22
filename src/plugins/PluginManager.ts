@@ -165,7 +165,11 @@ export class PluginManager {
       const installed = this._installedVersions['together-community'];
       if (!installed || installed !== tcInfo.version) {
         console.log(`[PluginManager] ensurePluginsLoaded downloading together-community (installed: ${installed ?? 'none'}, available: ${tcInfo.version})`);
-        await this.downloadPlugin(tcInfo);
+        try {
+          await this.downloadPlugin(tcInfo);
+        } catch (e) {
+          console.error('[PluginManager] ensurePluginsLoaded failed to download together-community:', e);
+        }
       }
     }
     if (!this._loadedPlugins.has('together-community')) {
@@ -240,14 +244,7 @@ export class PluginManager {
       throw new Error(`extractPluginZip: zip for "${id}" contains no main.js entry`);
     }
 
-    // Clean up old files before extracting new version
-    if (await adapter.exists(bundlePath)) {
-      await adapter.remove(bundlePath);
-    }
-    if (await adapter.exists(assetsDir)) {
-      await (adapter as any).rmdir(assetsDir, true);
-    }
-
+    // Write new files first, then clean up old assets (so old bundle survives if write fails)
     for (const [relativePath, data] of Object.entries(unzipped)) {
       if (relativePath.endsWith('/')) continue; // skip directory entries from archiver
       if (relativePath === 'main.js') {
@@ -260,6 +257,11 @@ export class PluginManager {
         }
         await adapter.writeBinary(assetPath, data.buffer as ArrayBuffer);
       }
+    }
+
+    // Remove stale assets only after successful extraction
+    if (await adapter.exists(assetsDir)) {
+      await (adapter as any).rmdir(assetsDir, true);
     }
   }
 
