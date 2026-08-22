@@ -1,4 +1,6 @@
 import type { App } from 'obsidian';
+import { normalizePath } from 'obsidian';
+import { unzipSync, strFromU8 } from 'fflate';
 import type { TogetherSettings, AuthState, PluginInfo } from '../types';
 import { PreviewCache } from './PreviewCache';
 
@@ -210,17 +212,49 @@ export class PluginManager {
     });
     if (!r.ok) throw new Error(`Download failed for ${info.id}: HTTP ${r.status}`);
 
-    const code = await r.text();
-    const dir = this._subPluginsDir();
+    const zipBuffer = await r.arrayBuffer();
     const adapter = this.opts.app.vault.adapter;
+    const dir = this._subPluginsDir();
     if (!(await adapter.exists(dir))) await adapter.mkdir(dir);
-    await adapter.write(this._bundlePath(info.id), code);
+
+    await this.extractPluginZip(info.id, zipBuffer);
+
     await adapter.write(this._versionPath(info.id), info.version);
     if (info.buildDate) {
       await adapter.write(this._buildDatePath(info.id), info.buildDate);
       this._installedBuildDates[info.id] = info.buildDate;
     }
     this._installedVersions[info.id] = info.version;
+  }
+
+  private async extractPluginZip(id: string, zipBuffer: ArrayBuffer): Promise<void> {
+    const adapter = this.opts.app.vault.adapter;
+    const subDir = this._subPluginsDir();
+    const bundlePath = this._bundlePath(id);
+    const assetsDir = normalizePath(`${subDir}/${id}/assets`);
+
+    // Clean up old files before extracting new version
+    if (await adapter.exists(bundlePath)) {
+      await adapter.remove(bundlePath);
+    }
+    if (await adapter.exists(assetsDir)) {
+      await (adapter as any).rmdir(assetsDir, true);
+    }
+
+    const unzipped = unzipSync(new Uint8Array(zipBuffer));
+
+    for (const [relativePath, data] of Object.entries(unzipped)) {
+      if (relativePath === 'main.js') {
+        await adapter.write(bundlePath, strFromU8(data));
+      } else if (relativePath.startsWith('assets/')) {
+        const assetPath = normalizePath(`${subDir}/${id}/${relativePath}`);
+        const parentDir = assetPath.substring(0, assetPath.lastIndexOf('/'));
+        if (!(await adapter.exists(parentDir))) {
+          await adapter.mkdir(parentDir);
+        }
+        await adapter.writeBinary(assetPath, data.buffer as ArrayBuffer);
+      }
+    }
   }
 
   async loadPlugin(id: string): Promise<void> {
