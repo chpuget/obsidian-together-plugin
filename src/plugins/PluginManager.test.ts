@@ -152,3 +152,209 @@ describe('PluginManager.syncEnabledPlugins', () => {
     expect(load).not.toHaveBeenCalledWith('games');
   });
 });
+
+describe('PluginManager._migrateOldFlatFiles', () => {
+  function makePmWithAdapter(adapter: any) {
+    const pm = new PluginManager({
+      app: { vault: { adapter } } as any,
+      getSettings: () => ({ devMode: false, devRepoRoot: '' } as any),
+      getAuth: () => ({ token: 'tok', serverUrl: 'http://localhost', username: 'alice', isLoggedIn: true } as any),
+    });
+    return pm;
+  }
+
+  it('removes .js files from sub-plugins directory', async () => {
+    const adapter = {
+      exists: vi.fn().mockResolvedValue(true),
+      list: vi.fn().mockResolvedValue({
+        files: [
+          '.obsidian/plugins/obsidian-together/sub-plugins/old-plugin.js',
+        ],
+        folders: [],
+      }),
+      remove: vi.fn().mockResolvedValue(undefined),
+    };
+    const pm = makePmWithAdapter(adapter);
+
+    await pm['_migrateOldFlatFiles']();
+
+    expect(adapter.remove).toHaveBeenCalledWith('.obsidian/plugins/obsidian-together/sub-plugins/old-plugin.js');
+  });
+
+  it('removes .version files from sub-plugins directory', async () => {
+    const adapter = {
+      exists: vi.fn().mockResolvedValue(true),
+      list: vi.fn().mockResolvedValue({
+        files: [
+          '.obsidian/plugins/obsidian-together/sub-plugins/plugin.version',
+        ],
+        folders: [],
+      }),
+      remove: vi.fn().mockResolvedValue(undefined),
+    };
+    const pm = makePmWithAdapter(adapter);
+
+    await pm['_migrateOldFlatFiles']();
+
+    expect(adapter.remove).toHaveBeenCalledWith('.obsidian/plugins/obsidian-together/sub-plugins/plugin.version');
+  });
+
+  it('removes .builddate files from sub-plugins directory', async () => {
+    const adapter = {
+      exists: vi.fn().mockResolvedValue(true),
+      list: vi.fn().mockResolvedValue({
+        files: [
+          '.obsidian/plugins/obsidian-together/sub-plugins/plugin.builddate',
+        ],
+        folders: [],
+      }),
+      remove: vi.fn().mockResolvedValue(undefined),
+    };
+    const pm = makePmWithAdapter(adapter);
+
+    await pm['_migrateOldFlatFiles']();
+
+    expect(adapter.remove).toHaveBeenCalledWith('.obsidian/plugins/obsidian-together/sub-plugins/plugin.builddate');
+  });
+
+  it('skips files that do not match .js, .version, or .builddate extensions', async () => {
+    const adapter = {
+      exists: vi.fn().mockResolvedValue(true),
+      list: vi.fn().mockResolvedValue({
+        files: [
+          '.obsidian/plugins/obsidian-together/sub-plugins/readme.txt',
+          '.obsidian/plugins/obsidian-together/sub-plugins/config.json',
+          '.obsidian/plugins/obsidian-together/sub-plugins/data.md',
+        ],
+        folders: [],
+      }),
+      remove: vi.fn().mockResolvedValue(undefined),
+    };
+    const pm = makePmWithAdapter(adapter);
+
+    await pm['_migrateOldFlatFiles']();
+
+    expect(adapter.remove).not.toHaveBeenCalled();
+  });
+
+  it('removes only matching files and skips others when mixed', async () => {
+    const adapter = {
+      exists: vi.fn().mockResolvedValue(true),
+      list: vi.fn().mockResolvedValue({
+        files: [
+          '.obsidian/plugins/obsidian-together/sub-plugins/old-plugin.js',
+          '.obsidian/plugins/obsidian-together/sub-plugins/readme.txt',
+          '.obsidian/plugins/obsidian-together/sub-plugins/plugin.version',
+          '.obsidian/plugins/obsidian-together/sub-plugins/config.json',
+          '.obsidian/plugins/obsidian-together/sub-plugins/plugin.builddate',
+        ],
+        folders: [],
+      }),
+      remove: vi.fn().mockResolvedValue(undefined),
+    };
+    const pm = makePmWithAdapter(adapter);
+
+    await pm['_migrateOldFlatFiles']();
+
+    expect(adapter.remove).toHaveBeenCalledTimes(3);
+    expect(adapter.remove).toHaveBeenCalledWith('.obsidian/plugins/obsidian-together/sub-plugins/old-plugin.js');
+    expect(adapter.remove).toHaveBeenCalledWith('.obsidian/plugins/obsidian-together/sub-plugins/plugin.version');
+    expect(adapter.remove).toHaveBeenCalledWith('.obsidian/plugins/obsidian-together/sub-plugins/plugin.builddate');
+  });
+
+  it('is a no-op when directory does not exist', async () => {
+    const adapter = {
+      exists: vi.fn().mockResolvedValue(false),
+      list: vi.fn(),
+      remove: vi.fn(),
+    };
+    const pm = makePmWithAdapter(adapter);
+
+    await pm['_migrateOldFlatFiles']();
+
+    expect(adapter.list).not.toHaveBeenCalled();
+    expect(adapter.remove).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op when directory exists but no flat files remain', async () => {
+    const adapter = {
+      exists: vi.fn().mockResolvedValue(true),
+      list: vi.fn().mockResolvedValue({
+        files: [],
+        folders: [
+          '.obsidian/plugins/obsidian-together/sub-plugins/plugin-subdir',
+        ],
+      }),
+      remove: vi.fn().mockResolvedValue(undefined),
+    };
+    const pm = makePmWithAdapter(adapter);
+
+    await pm['_migrateOldFlatFiles']();
+
+    expect(adapter.remove).not.toHaveBeenCalled();
+  });
+
+  it('handles remove errors gracefully (ignore failures)', async () => {
+    const adapter = {
+      exists: vi.fn().mockResolvedValue(true),
+      list: vi.fn().mockResolvedValue({
+        files: [
+          '.obsidian/plugins/obsidian-together/sub-plugins/plugin.js',
+        ],
+        folders: [],
+      }),
+      remove: vi.fn().mockRejectedValue(new Error('Permission denied')),
+    };
+    const pm = makePmWithAdapter(adapter);
+
+    // Should not throw, errors are silently caught
+    await expect(pm['_migrateOldFlatFiles']()).resolves.toBeUndefined();
+    expect(adapter.remove).toHaveBeenCalled();
+  });
+
+  it('removes all three file types in a single call', async () => {
+    const adapter = {
+      exists: vi.fn().mockResolvedValue(true),
+      list: vi.fn().mockResolvedValue({
+        files: [
+          '.obsidian/plugins/obsidian-together/sub-plugins/old-plugin.js',
+          '.obsidian/plugins/obsidian-together/sub-plugins/old-plugin.version',
+          '.obsidian/plugins/obsidian-together/sub-plugins/old-plugin.builddate',
+        ],
+        folders: [],
+      }),
+      remove: vi.fn().mockResolvedValue(undefined),
+    };
+    const pm = makePmWithAdapter(adapter);
+
+    await pm['_migrateOldFlatFiles']();
+
+    expect(adapter.remove).toHaveBeenCalledTimes(3);
+  });
+
+  it('second call with no remaining flat files is a clean no-op', async () => {
+    const adapter = {
+      exists: vi.fn().mockResolvedValue(true),
+      list: vi.fn().mockResolvedValue({
+        files: [],
+        folders: [
+          '.obsidian/plugins/obsidian-together/sub-plugins/plugin-new-layout',
+        ],
+      }),
+      remove: vi.fn().mockResolvedValue(undefined),
+    };
+    const pm = makePmWithAdapter(adapter);
+
+    // First call - no files to remove
+    await pm['_migrateOldFlatFiles']();
+    expect(adapter.remove).not.toHaveBeenCalled();
+
+    // Second call - should also be a no-op with no side effects
+    adapter.list.mockClear();
+    adapter.remove.mockClear();
+    await pm['_migrateOldFlatFiles']();
+
+    expect(adapter.list).toHaveBeenCalled();
+    expect(adapter.remove).not.toHaveBeenCalled();
+  });
+});
