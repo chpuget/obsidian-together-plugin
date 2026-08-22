@@ -240,14 +240,9 @@ export class PluginManager {
       throw new Error(`extractPluginZip: zip for "${id}" contains no main.js entry`);
     }
 
-    const stylesPath = normalizePath(`${subDir}/${id}/styles.css`);
-
     // Clean up old files before extracting new version
     if (await adapter.exists(bundlePath)) {
       await adapter.remove(bundlePath);
-    }
-    if (await adapter.exists(stylesPath)) {
-      await adapter.remove(stylesPath);
     }
     if (await adapter.exists(assetsDir)) {
       await (adapter as any).rmdir(assetsDir, true);
@@ -256,8 +251,6 @@ export class PluginManager {
     for (const [relativePath, data] of Object.entries(unzipped)) {
       if (relativePath === 'main.js') {
         await adapter.write(bundlePath, strFromU8(data));
-      } else if (relativePath === 'styles.css') {
-        await adapter.write(stylesPath, strFromU8(data));
       } else if (relativePath.startsWith('assets/')) {
         const assetPath = normalizePath(`${subDir}/${id}/${relativePath}`);
         const parentDir = assetPath.substring(0, assetPath.lastIndexOf('/'));
