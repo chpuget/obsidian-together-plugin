@@ -221,6 +221,8 @@ export class PluginManager {
     const adapter = this.opts.app.vault.adapter;
     const dir = this._subPluginsDir();
     if (!(await adapter.exists(dir))) await adapter.mkdir(dir);
+    const pluginDir = normalizePath(`${dir}/${info.id}`);
+    if (!(await adapter.exists(pluginDir))) await adapter.mkdir(pluginDir);
 
     await this.extractPluginZip(info.id, zipBuffer);
 
@@ -236,7 +238,6 @@ export class PluginManager {
     const adapter = this.opts.app.vault.adapter;
     const subDir = this._subPluginsDir();
     const bundlePath = this._bundlePath(id);
-    const assetsDir = normalizePath(`${subDir}/${id}/assets`);
 
     console.log(`[PluginManager] extractPluginZip ${id}: zip buffer size=${zipBuffer.byteLength}`);
     const unzipped = unzipSync(new Uint8Array(zipBuffer));
@@ -247,9 +248,18 @@ export class PluginManager {
       throw new Error(`extractPluginZip: zip for "${id}" contains no main.js entry`);
     }
 
-    // Write new files first, then clean up old assets (so old bundle survives if write fails)
+    // Remove stale assets before writing new ones
+    const assetsDir = normalizePath(`${subDir}/${id}/assets`);
+    if (await adapter.exists(assetsDir)) {
+      await (adapter as any).rmdir(assetsDir, true);
+    }
+
+    // Ensure plugin dir exists
+    const pluginDir = normalizePath(`${subDir}/${id}`);
+    if (!(await adapter.exists(pluginDir))) await adapter.mkdir(pluginDir);
+
     for (const [relativePath, data] of Object.entries(unzipped)) {
-      if (relativePath.endsWith('/')) continue; // skip directory entries from archiver
+      if (relativePath.endsWith('/')) continue;
       if (relativePath === 'main.js') {
         const content = strFromU8(data);
         const firstBytes = Array.from(content.slice(0, 8)).map(c => c.charCodeAt(0).toString(16)).join(' ');
@@ -263,11 +273,6 @@ export class PluginManager {
         }
         await adapter.writeBinary(assetPath, data.buffer as ArrayBuffer);
       }
-    }
-
-    // Remove stale assets only after successful extraction
-    if (await adapter.exists(assetsDir)) {
-      await (adapter as any).rmdir(assetsDir, true);
     }
   }
 
@@ -433,15 +438,15 @@ export class PluginManager {
   }
 
   private _bundlePath(id: string): string {
-    return this._subPluginsDir() + `/${id}.js`;
+    return this._subPluginsDir() + `/${id}/main.js`;
   }
 
   private _buildDatePath(id: string): string {
-    return this._subPluginsDir() + `/${id}.builddate`;
+    return this._subPluginsDir() + `/${id}/main.builddate`;
   }
 
   private _versionPath(id: string): string {
-    return this._subPluginsDir() + `/${id}.version`;
+    return this._subPluginsDir() + `/${id}/main.version`;
   }
 
   private _resolvedBundlePath(id: string): string {
@@ -491,21 +496,23 @@ export class PluginManager {
       return;
     }
 
-    // Non-dev: scan vault-relative sub-plugins directory for *.version files
+    // Non-dev: scan vault-relative sub-plugins directory for per-plugin subdirs
     const dir = this._subPluginsDir();
     const adapter = this.opts.app.vault.adapter;
     if (!(await adapter.exists(dir))) return;
-    const { files } = await adapter.list(dir);
-    for (const filePath of files) {
-      const file = filePath.split('/').pop()!;
-      if (!file.endsWith('.version')) continue;
-      const id = file.slice(0, -'.version'.length);
+    const { folders } = await adapter.list(dir);
+    for (const folderPath of folders) {
+      const id = folderPath.split('/').pop()!;
+      if (!id) continue;
       try {
-        const version = (await adapter.read(filePath)).trim();
-        if (version) this._installedVersions[id] = version;
+        const versionPath = normalizePath(`${folderPath}/main.version`);
+        if (await adapter.exists(versionPath)) {
+          const version = (await adapter.read(versionPath)).trim();
+          if (version) this._installedVersions[id] = version;
+        }
       } catch { /* ignore */ }
       try {
-        const bdPath = `${dir}/${id}.builddate`;
+        const bdPath = normalizePath(`${folderPath}/main.builddate`);
         if (await adapter.exists(bdPath)) {
           const buildDate = (await adapter.read(bdPath)).trim();
           if (buildDate) this._installedBuildDates[id] = buildDate;

@@ -35,6 +35,29 @@ describe('PluginManager.hasUpdate', () => {
   });
 });
 
+describe('PluginManager path helpers', () => {
+  it('_bundlePath uses per-plugin subfolder', () => {
+    const pm = makepm();
+    expect(pm['_bundlePath']('behringer-console')).toBe(
+      '.obsidian/plugins/obsidian-together/sub-plugins/behringer-console/main.js'
+    );
+  });
+
+  it('_versionPath uses per-plugin subfolder', () => {
+    const pm = makepm();
+    expect(pm['_versionPath']('games')).toBe(
+      '.obsidian/plugins/obsidian-together/sub-plugins/games/main.version'
+    );
+  });
+
+  it('_buildDatePath uses per-plugin subfolder', () => {
+    const pm = makepm();
+    expect(pm['_buildDatePath']('music-band')).toBe(
+      '.obsidian/plugins/obsidian-together/sub-plugins/music-band/main.builddate'
+    );
+  });
+});
+
 describe('PluginManager.syncEnabledPlugins', () => {
   it('unloads a plugin that is loaded but absent from enabledPlugins', async () => {
     const pm = makepm();
