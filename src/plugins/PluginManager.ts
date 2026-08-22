@@ -478,6 +478,19 @@ export class PluginManager {
     }
   }
 
+  private async _migrateOldFlatFiles(): Promise<void> {
+    const adapter = this.opts.app.vault.adapter;
+    const dir = this._subPluginsDir();
+    if (!(await adapter.exists(dir))) return;
+    const { files } = await adapter.list(dir);
+    for (const filePath of files) {
+      const name = filePath.split('/').pop()!;
+      if (name.endsWith('.js') || name.endsWith('.version') || name.endsWith('.builddate')) {
+        try { await adapter.remove(filePath); } catch { /* ignore */ }
+      }
+    }
+  }
+
   private async _loadInstalledVersions(): Promise<void> {
     const settings = this.opts.getSettings();
     if (settings.devMode) {
@@ -495,6 +508,9 @@ export class PluginManager {
       }
       return;
     }
+
+    // Migrate old flat-layout files before scanning for per-plugin subdirs
+    await this._migrateOldFlatFiles();
 
     // Non-dev: scan vault-relative sub-plugins directory for per-plugin subdirs
     const dir = this._subPluginsDir();
