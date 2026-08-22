@@ -233,6 +233,13 @@ export class PluginManager {
     const bundlePath = this._bundlePath(id);
     const assetsDir = normalizePath(`${subDir}/${id}/assets`);
 
+    const unzipped = unzipSync(new Uint8Array(zipBuffer));
+
+    // Check for main.js before cleaning old files
+    if (!('main.js' in unzipped)) {
+      throw new Error(`extractPluginZip: zip for "${id}" contains no main.js entry`);
+    }
+
     // Clean up old files before extracting new version
     if (await adapter.exists(bundlePath)) {
       await adapter.remove(bundlePath);
@@ -240,8 +247,6 @@ export class PluginManager {
     if (await adapter.exists(assetsDir)) {
       await (adapter as any).rmdir(assetsDir, true);
     }
-
-    const unzipped = unzipSync(new Uint8Array(zipBuffer));
 
     for (const [relativePath, data] of Object.entries(unzipped)) {
       if (relativePath === 'main.js') {
