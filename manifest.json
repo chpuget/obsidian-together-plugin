@@ -1,7 +1,7 @@
 {
   "id": "obsidian-together",
   "name": "Obsidian Together",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "minAppVersion": "1.5.0",
   "description": "Core plugin for the Obsidian Together ecosystem — auth, plugin registry, and shared API surface.",
   "author": "Christophe Puget",

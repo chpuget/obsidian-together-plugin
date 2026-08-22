@@ -1,5 +1,5 @@
 import type { App } from 'obsidian';
-import { normalizePath } from 'obsidian';
+import { normalizePath, Notice } from 'obsidian';
 import { unzipSync, strFromU8 } from 'fflate';
 import type { TogetherSettings, AuthState, PluginInfo } from '../types';
 import { PreviewCache } from './PreviewCache';
@@ -169,6 +169,7 @@ export class PluginManager {
           await this.downloadPlugin(tcInfo);
         } catch (e) {
           console.error('[PluginManager] ensurePluginsLoaded failed to download together-community:', e);
+          new Notice(`Failed to download together-community: ${(e as Error).message ?? e}`);
         }
       }
     }
