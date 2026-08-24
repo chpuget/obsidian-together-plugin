@@ -16,6 +16,41 @@ export function parseVersion(v: string): { major: number; minor: number; build: 
   return { major: parts[0], minor: parts[1], build: parts[2] };
 }
 
+export function resolveUpdateOrder(plugins: PluginInfo[]): PluginInfo[] {
+  const ids = new Set(plugins.map(p => p.id));
+  const inDegree = new Map<string, number>(plugins.map(p => [p.id, 0]));
+  const adj = new Map<string, string[]>(plugins.map(p => [p.id, []]));
+
+  for (const p of plugins) {
+    for (const dep of (p.requires ?? [])) {
+      if (!ids.has(dep)) continue; // dep not in update set — skip
+      inDegree.set(p.id, inDegree.get(p.id)! + 1);
+      adj.get(dep)!.push(p.id);
+    }
+  }
+
+  const queue: string[] = [];
+  for (const [id, deg] of inDegree) {
+    if (deg === 0) queue.push(id);
+  }
+
+  const pluginMap = new Map(plugins.map(p => [p.id, p]));
+  const result: PluginInfo[] = [];
+
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    result.push(pluginMap.get(id)!);
+    for (const next of adj.get(id)!) {
+      const deg = inDegree.get(next)! - 1;
+      inDegree.set(next, deg);
+      if (deg === 0) queue.push(next);
+    }
+  }
+
+  // Cycle fallback: return original order
+  return result.length === plugins.length ? result : plugins;
+}
+
 export class PluginManager {
   private _availablePlugins: PluginInfo[] = [];
   private _installedVersions: Record<string, string> = {};
@@ -53,6 +88,16 @@ export class PluginManager {
     if (ap.major !== ip.major) return ap.major > ip.major;
     if (ap.minor !== ip.minor) return ap.minor > ip.minor;
     return ap.build > ip.build;
+  }
+
+  checkDependencies(id: string): PluginInfo[] {
+    const info = this._availablePlugins.find(p => p.id === id);
+    if (!info) return [];
+    const loaded = new Set(this.getLoadedPluginIds());
+    return (info.requires ?? [])
+      .filter(dep => dep !== 'obsidian-together')
+      .map(dep => this._availablePlugins.find(p => p.id === dep))
+      .filter((p): p is PluginInfo => !!p && !loaded.has(p.id));
   }
 
   getPreviewCache(): PreviewCache {

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { PluginManager, parseVersion } from './PluginManager';
+import { PluginManager, parseVersion, resolveUpdateOrder } from './PluginManager';
+import type { PluginInfo } from '../types';
 
 function makepm() {
   return new PluginManager({
@@ -356,5 +357,84 @@ describe('PluginManager._migrateOldFlatFiles', () => {
 
     expect(adapter.list).toHaveBeenCalled();
     expect(adapter.remove).not.toHaveBeenCalled();
+  });
+});
+
+describe('resolveUpdateOrder', () => {
+  function info(id: string, requires: string[] = []): PluginInfo {
+    return { id, name: id, description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {}, requires } as any;
+  }
+
+  it('returns single plugin unchanged', () => {
+    const result = resolveUpdateOrder([info('together-community')]);
+    expect(result.map(p => p.id)).toEqual(['together-community']);
+  });
+
+  it('places dependency before dependent', () => {
+    const result = resolveUpdateOrder([
+      info('music-band', ['obsidian-together', 'together-community']),
+      info('together-community', ['obsidian-together']),
+    ]);
+    expect(result.map(p => p.id)).toEqual(['together-community', 'music-band']);
+  });
+
+  it('resolves three-level chain: together-community → music-band → behringer-console', () => {
+    const result = resolveUpdateOrder([
+      info('behringer-console', ['obsidian-together', 'together-community', 'music-band']),
+      info('music-band', ['obsidian-together', 'together-community']),
+      info('together-community', ['obsidian-together']),
+    ]);
+    expect(result.map(p => p.id)).toEqual(['together-community', 'music-band', 'behringer-console']);
+  });
+
+  it('ignores deps not in the update list (e.g. obsidian-together)', () => {
+    const result = resolveUpdateOrder([
+      info('together-community', ['obsidian-together']),
+      info('games', ['obsidian-together', 'together-community']),
+    ]);
+    expect(result.map(p => p.id)).toEqual(['together-community', 'games']);
+  });
+
+  it('handles plugins with no requires', () => {
+    const result = resolveUpdateOrder([info('games'), info('music-band')]);
+    expect(result).toHaveLength(2);
+  });
+});
+
+describe('PluginManager.checkDependencies', () => {
+  it('returns empty when all deps are loaded', () => {
+    const pm = makepm();
+    pm['_availablePlugins'] = [
+      { id: 'together-community', name: 'Together Community', requires: ['obsidian-together'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
+      { id: 'music-band', name: 'Music Band', requires: ['obsidian-together', 'together-community'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
+    ] as any;
+    pm['_loadedPlugins'] = new Map([['together-community', {}]]);
+    expect(pm.checkDependencies('music-band')).toHaveLength(0);
+  });
+
+  it('returns missing dep when not loaded', () => {
+    const pm = makepm();
+    pm['_availablePlugins'] = [
+      { id: 'together-community', name: 'Together Community', requires: ['obsidian-together'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
+      { id: 'music-band', name: 'Music Band', requires: ['obsidian-together', 'together-community'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
+    ] as any;
+    pm['_loadedPlugins'] = new Map(); // together-community NOT loaded
+    const missing = pm.checkDependencies('music-band');
+    expect(missing.map((p: any) => p.id)).toEqual(['together-community']);
+  });
+
+  it('ignores obsidian-together (always satisfied)', () => {
+    const pm = makepm();
+    pm['_availablePlugins'] = [
+      { id: 'together-community', name: 'Together Community', requires: ['obsidian-together'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
+    ] as any;
+    pm['_loadedPlugins'] = new Map();
+    expect(pm.checkDependencies('together-community')).toHaveLength(0);
+  });
+
+  it('returns empty for unknown plugin id', () => {
+    const pm = makepm();
+    pm['_availablePlugins'] = [];
+    expect(pm.checkDependencies('nonexistent')).toHaveLength(0);
   });
 });
