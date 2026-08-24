@@ -12,6 +12,7 @@ export interface PluginInfo {
   previewUrls: { md?: string; jpg?: string; coverJpg?: string };
   required?: boolean;
   roadmap?: boolean;
+  requires?: string[];
 }
 
 export interface PluginManagerAPI {
@@ -26,6 +27,8 @@ export interface PluginManagerAPI {
   getLoadedPluginIds(): string[];
   hasUpdate(id: string): boolean;
   syncEnabledPlugins(username: string): Promise<void>;
+  autoUpdate(): Promise<{ abortSync: boolean }>;
+  checkDependencies(id: string): PluginInfo[];
 }
 
 /**
