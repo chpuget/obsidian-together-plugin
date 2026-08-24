@@ -100,6 +100,34 @@ export class PluginManager {
       .filter((p): p is PluginInfo => !!p && !loaded.has(p.id));
   }
 
+  async autoUpdate(): Promise<{ abortSync: boolean }> {
+    await this.refreshAvailablePlugins();
+    const toUpdate = this._availablePlugins.filter(p => this.hasUpdate(p.id));
+    if (toUpdate.length === 0) return { abortSync: false };
+
+    const ordered = resolveUpdateOrder(toUpdate);
+    const names = ordered.map(p => p.name).join(', ');
+    new Notice(`Auto-updating plugins: ${names}`);
+
+    const tc = ordered.find(p => p.id === 'together-community');
+    const others = ordered.filter(p => p.id !== 'together-community');
+
+    for (const p of others) {
+      await this.downloadPlugin(p);
+      await this.unloadPlugin(p.id);
+      await this.loadPlugin(p.id);
+    }
+
+    if (tc) {
+      await this.downloadPlugin(tc);
+      await this.unloadPlugin(tc.id);
+      await this.loadPlugin(tc.id);
+      return { abortSync: true };
+    }
+
+    return { abortSync: false };
+  }
+
   getPreviewCache(): PreviewCache {
     if (!this._previewCache) {
       const adapter = (this.opts.app.vault.adapter as any);
@@ -429,6 +457,11 @@ export class PluginManager {
       if (this._loadedPlugins.has(id)) { console.log(`[PluginManager] syncEnabledPlugins skip (already loaded): ${id}`); continue; }
       const info = this._availablePlugins.find(p => p.id === id);
       if (!info) { console.log(`[PluginManager] syncEnabledPlugins skip (not in available list): ${id}`); continue; }
+      const missingDeps = this.checkDependencies(id);
+      if (missingDeps.length > 0) {
+        console.warn(`[PluginManager] syncEnabledPlugins: skipping ${id} — missing deps: ${missingDeps.map(d => d.id).join(', ')}`);
+        continue;
+      }
       try {
         if (this.isOnline) {
           const installed = this._installedVersions[id];
