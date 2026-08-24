@@ -102,7 +102,9 @@ export class PluginManager {
 
   async autoUpdate(): Promise<{ abortSync: boolean }> {
     await this.refreshAvailablePlugins();
-    const toUpdate = this._availablePlugins.filter(p => this.hasUpdate(p.id));
+    const toUpdate = this._availablePlugins.filter(
+      p => p.id in this._installedVersions && this.hasUpdate(p.id)
+    );
     if (toUpdate.length === 0) return { abortSync: false };
 
     const ordered = resolveUpdateOrder(toUpdate);
