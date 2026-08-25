@@ -97,6 +97,14 @@ export class TogetherSettingTab extends PluginSettingTab {
         toggle.onChange(async (v) => {
           this.plugin.settings.devMode = v;
           this.plugin.saveSettings();
+          if (this.plugin.settings.devRepoRoot) {
+            const result = this.plugin.manageDevSymlink(v);
+            if (result.ok) {
+              new Notice(result.message + (v ? '\nRestart Obsidian to load plugin-core from repo.' : ''));
+            } else {
+              new Notice(`Dev symlink: ${result.message}`, 5000);
+            }
+          }
           this.display();
         });
       });
@@ -111,8 +119,19 @@ export class TogetherSettingTab extends PluginSettingTab {
           t.onChange((v) => {
             this.plugin.settings.devRepoRoot = v.trim();
             this.plugin.saveSettings();
+            if (v.trim()) {
+              const result = this.plugin.manageDevSymlink(true);
+              if (!result.ok) new Notice(`Dev symlink: ${result.message}`, 5000);
+            }
           });
         });
+
+      const corePath = (this.plugin as any)._devPluginCorePath?.() ?? '(unknown)';
+      const fs = typeof require !== 'undefined' ? (() => { try { return require('fs'); } catch { return null; } })() : null;
+      const coreExists = fs ? fs.existsSync(corePath) : false;
+      new Setting(root)
+        .setName('Plugin-core source')
+        .setDesc(`${corePath} ${coreExists ? '✓' : '✗ not found'}`);
 
       new Setting(root)
         .addButton(btn =>

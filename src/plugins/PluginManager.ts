@@ -100,6 +100,16 @@ export class PluginManager {
       .filter((p): p is PluginInfo => !!p && !loaded.has(p.id));
   }
 
+  getSubPluginAssetResourceUrl(pluginId: string, assetRelPath: string): string {
+    const settings = this.opts.getSettings();
+    if (settings.devMode && settings.devRepoRoot) {
+      const absPath = `${settings.devRepoRoot}/apps/${pluginId}/${assetRelPath}`.replace(/\\/g, '/');
+      return 'app://local/' + (absPath.startsWith('/') ? absPath.slice(1) : absPath);
+    }
+    const vaultRelPath = normalizePath(`${this._subPluginsDir()}/${pluginId}/${assetRelPath}`);
+    return (this.opts.app.vault.adapter as { getResourcePath(p: string): string }).getResourcePath(vaultRelPath);
+  }
+
   async autoUpdate(): Promise<{ abortSync: boolean }> {
     await this.refreshAvailablePlugins();
     const toUpdate = this._availablePlugins.filter(
@@ -426,9 +436,12 @@ export class PluginManager {
   }
 
   async reloadAll(): Promise<void> {
-    const ids = [...this._loadedPlugins.keys()];
-    for (const id of ids) await this.unloadPlugin(id);
-    for (const id of ids) await this.loadPlugin(id);
+    const settings = this.opts.getSettings();
+    const idsToLoad = settings.devMode ? this._getDevPluginIds() : [...this._loadedPlugins.keys()];
+    for (const id of [...this._loadedPlugins.keys()]) await this.unloadPlugin(id);
+    for (const id of idsToLoad) {
+      try { await this.loadPlugin(id); } catch (e) { console.error(`PluginManager: reloadAll failed to load ${id}:`, e); }
+    }
   }
 
   unloadAll(): void {
@@ -560,7 +573,7 @@ export class PluginManager {
 
   private async _migrateOldFlatFiles(): Promise<void> {
     const adapter = this.opts.app.vault.adapter;
-    const dir = this._subPluginsDir();
+    const dir = '.obsidian/plugins/obsidian-together/sub-plugins';
     if (!(await adapter.exists(dir))) return;
     const { files } = await adapter.list(dir);
     for (const filePath of files) {
@@ -571,12 +584,28 @@ export class PluginManager {
     }
   }
 
+  private _getDevPluginIds(): string[] {
+    const settings = this.opts.getSettings();
+    if (!settings.devRepoRoot) return [];
+    const fs = this._requireFs();
+    const appsDir = `${settings.devRepoRoot}/apps`;
+    if (!fs.existsSync(appsDir)) return [];
+    return (fs.readdirSync(appsDir) as string[]).filter((id: string) => {
+      const mdPath = `${appsDir}/${id}/${id}.md`;
+      if (!fs.existsSync(mdPath)) return false;
+      try {
+        const content: string = fs.readFileSync(mdPath, 'utf-8');
+        return !/^roadmap:\s*true/m.test(content);
+      } catch { return false; }
+    });
+  }
+
   private async _loadInstalledVersions(): Promise<void> {
     const settings = this.opts.getSettings();
     if (settings.devMode) {
       // In dev mode, read version.json from repo using Node fs
       const fs = this._requireFs();
-      for (const id of ['together-community', 'games', 'music-band']) {
+      for (const id of this._getDevPluginIds()) {
         const vp = `${settings.devRepoRoot}/apps/${id}/version.json`;
         if (fs.existsSync(vp)) {
           try {
@@ -586,6 +615,8 @@ export class PluginManager {
           } catch { /* ignore */ }
         }
       }
+      // Clean up stale flat-layout files from the vault even in devMode
+      await this._migrateOldFlatFiles();
       return;
     }
 

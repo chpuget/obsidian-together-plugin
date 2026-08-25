@@ -29,6 +29,9 @@ export interface PluginManagerAPI {
   syncEnabledPlugins(username: string): Promise<void>;
   autoUpdate(): Promise<{ abortSync: boolean }>;
   checkDependencies(id: string): PluginInfo[];
+  /** Returns a platform-correct resource URL for an asset file bundled with a sub-plugin.
+   *  Works in both dev mode (absolute repo path) and production (vault-relative path). */
+  getSubPluginAssetResourceUrl(pluginId: string, assetRelPath: string): string;
 }
 
 /**
@@ -39,6 +42,7 @@ export interface TogetherAPI {
   readonly version: string;
   readonly auth: AuthState;
   readonly events: EventEmitter;
+  readonly isDevMode: boolean;
   /** Look up a loaded extension plugin by its manifest id. */
   getPlugin(id: string): unknown;
   /** Login with credentials. Stores encrypted password if safeStorage is available.
