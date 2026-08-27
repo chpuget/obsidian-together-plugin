@@ -458,8 +458,7 @@ describe('PluginManager._removeFromEnabledPlugins', () => {
     };
     const pm = makePmWithAdapter(adapter);
     await pm['_removeFromEnabledPlugins']('alice', 'together-community');
-    expect(writtenContent).not.toContain('together-community');
-    expect(writtenContent).toContain('music-band');
+    expect(writtenContent).toBe('---\nenabledPlugins:\n  - music-band\n---\n\nuser content');
   });
 
   it('writes enabledPlugins: [] when list becomes empty', async () => {
@@ -472,8 +471,7 @@ describe('PluginManager._removeFromEnabledPlugins', () => {
     };
     const pm = makePmWithAdapter(adapter);
     await pm['_removeFromEnabledPlugins']('alice', 'together-community');
-    expect(writtenContent).toContain('enabledPlugins: []');
-    expect(writtenContent).not.toContain('together-community');
+    expect(writtenContent).toBe('---\nenabledPlugins: []\n---\n\nbody');
   });
 
   it('is a no-op when id is not in enabledPlugins', async () => {
