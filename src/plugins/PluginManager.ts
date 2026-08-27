@@ -168,6 +168,7 @@ export class PluginManager {
       .map(info => cache.refresh(info.id, info.version, info.previewChecksum, info.previewUrls)
         .catch((e) => console.warn(`PluginManager: preview refresh failed for ${info.id}:`, e)));
     if (refreshes.length > 0) await Promise.allSettled(refreshes);
+    await this._evictObsoletePreviews(new Set(plugins.map(p => p.id)));
     console.log(`[PluginManager] updateFromPluginList: done`);
   }
 
@@ -190,6 +191,7 @@ export class PluginManager {
           .map(info => cache.refresh(info.id, info.version, info.previewChecksum, info.previewUrls)
             .catch((e) => console.warn(`PluginManager: preview refresh failed for ${info.id}:`, e)));
         if (refreshes.length > 0) await Promise.allSettled(refreshes);
+        await this._evictObsoletePreviews(new Set(this._availablePlugins.map(p => p.id)));
       }
     } catch {
       this.isOnline = false;
@@ -626,15 +628,21 @@ export class PluginManager {
     }
 
     // Preview cache cleanup — always runs (including devMode); evicts orphaned preview folders
+    await this._evictObsoletePreviews(serverIds);
+  }
+
+  private async _evictObsoletePreviews(serverIds: Set<string>): Promise<void> {
+    if (serverIds.size === 0) return;
+    const adapter = this.opts.app?.vault?.adapter;
+    if (!adapter) return;
     const previewsDir = '.obsidian/plugins/obsidian-together/previews';
-    if (await adapter.exists(previewsDir)) {
-      const { folders: previewFolders } = await adapter.list(previewsDir);
-      for (const folderPath of previewFolders) {
-        const id = folderPath.split('/').pop()!;
-        if (!id || serverIds.has(id)) continue;
-        console.log(`[PluginManager] cleanupObsoletePlugins evicting stale preview: ${id}`);
-        try { await this.getPreviewCache().evict(id); } catch (e) { console.warn(`[PluginManager] cleanup preview evict failed for ${id}:`, e); }
-      }
+    if (!(await adapter.exists(previewsDir))) return;
+    const { folders } = await adapter.list(previewsDir);
+    for (const folderPath of folders) {
+      const id = folderPath.split('/').pop()!;
+      if (!id || serverIds.has(id)) continue;
+      console.log(`[PluginManager] evictObsoletePreviews: removing stale preview ${id}`);
+      try { await this.getPreviewCache().evict(id); } catch (e) { console.warn(`[PluginManager] evictObsoletePreviews failed for ${id}:`, e); }
     }
   }
 
