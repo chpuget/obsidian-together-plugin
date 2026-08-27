@@ -152,6 +152,92 @@ describe('PluginManager.syncEnabledPlugins', () => {
     expect(load).toHaveBeenCalledWith('music-band');
     expect(load).not.toHaveBeenCalledWith('games');
   });
+
+  it('unloads and deletes obsolete plugin folder from disk', async () => {
+    const adapter = {
+      exists: vi.fn().mockResolvedValue(true),
+      list: vi.fn().mockResolvedValue({
+        files: [],
+        folders: ['.obsidian/plugins/obsidian-together/sub-plugins/together-community'],
+      }),
+      rmdir: vi.fn().mockResolvedValue(undefined),
+      read: vi.fn().mockResolvedValue(''),
+      write: vi.fn().mockResolvedValue(undefined),
+    };
+    const pm = new PluginManager({
+      app: { vault: { adapter } } as any,
+      getSettings: () => ({ devMode: false } as any),
+      getAuth: () => ({ username: 'alice', token: 'tok', serverUrl: 'http://localhost', isLoggedIn: true } as any),
+    });
+    pm['_availablePlugins'] = [
+      { id: 'community', version: '1.0.0', name: 'Community', description: '', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
+      { id: 'music-band', version: '1.0.0', name: 'Music Band', description: '', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
+    ] as any;
+    pm['_installedVersions'] = { 'together-community': '0.1.1' };
+    pm['_loadedPlugins'].set('together-community', { unload: vi.fn() });
+    pm['_readEnabledPluginsFromVault'] = vi.fn().mockResolvedValue([]);
+    const unload = vi.spyOn(pm, 'unloadPlugin');
+
+    await pm.syncEnabledPlugins('alice');
+
+    expect(unload).toHaveBeenCalledWith('together-community');
+    expect(adapter.rmdir).toHaveBeenCalledWith(
+      '.obsidian/plugins/obsidian-together/sub-plugins/together-community',
+      true
+    );
+    expect(pm['_installedVersions']['together-community']).toBeUndefined();
+  });
+
+  it('removes obsolete plugin id from enabledPlugins in vault file', async () => {
+    const vaultContent = '---\nenabledPlugins:\n  - together-community\n  - music-band\n---\n\nbody';
+    let writtenContent = '';
+    const adapter = {
+      exists: vi.fn().mockResolvedValue(true),
+      list: vi.fn().mockResolvedValue({
+        files: [],
+        folders: ['.obsidian/plugins/obsidian-together/sub-plugins/together-community'],
+      }),
+      rmdir: vi.fn().mockResolvedValue(undefined),
+      read: vi.fn().mockResolvedValue(vaultContent),
+      write: vi.fn().mockImplementation((_p: string, c: string) => { writtenContent = c; return Promise.resolve(); }),
+    };
+    const pm = new PluginManager({
+      app: { vault: { adapter } } as any,
+      getSettings: () => ({ devMode: false } as any),
+      getAuth: () => ({ username: 'alice', token: 'tok', serverUrl: 'http://localhost', isLoggedIn: true } as any),
+    });
+    pm['_availablePlugins'] = [
+      { id: 'community', version: '1.0.0', name: 'Community', description: '', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
+    ] as any;
+    pm['_readEnabledPluginsFromVault'] = vi.fn().mockResolvedValue([]);
+
+    await pm.syncEnabledPlugins('alice');
+
+    expect(writtenContent).not.toContain('together-community');
+    expect(writtenContent).toContain('music-band');
+  });
+
+  it('skips cleanup when _availablePlugins is empty (offline guard)', async () => {
+    const adapter = {
+      exists: vi.fn().mockResolvedValue(true),
+      list: vi.fn().mockResolvedValue({
+        files: [],
+        folders: ['.obsidian/plugins/obsidian-together/sub-plugins/together-community'],
+      }),
+      rmdir: vi.fn().mockResolvedValue(undefined),
+    };
+    const pm = new PluginManager({
+      app: { vault: { adapter } } as any,
+      getSettings: () => ({ devMode: false } as any),
+      getAuth: () => ({ username: 'alice', token: 'tok', serverUrl: 'http://localhost', isLoggedIn: true } as any),
+    });
+    pm['_availablePlugins'] = [];
+    pm['_readEnabledPluginsFromVault'] = vi.fn().mockResolvedValue([]);
+
+    await pm.syncEnabledPlugins('alice');
+
+    expect(adapter.rmdir).not.toHaveBeenCalled();
+  });
 });
 
 describe('PluginManager._migrateOldFlatFiles', () => {

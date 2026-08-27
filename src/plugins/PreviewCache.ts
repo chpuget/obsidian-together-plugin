@@ -241,6 +241,30 @@ export class PreviewCache {
     return [...ids];
   }
 
+  async evict(pluginId: string): Promise<void> {
+    this._metaCache.delete(pluginId);
+    this._bodyCache.delete(pluginId);
+    this._imageCache.delete(`${pluginId}/__refreshed`);
+    this._imageCache.delete(`${pluginId}/${pluginId}.jpg`);
+    this._imageCache.delete(`${pluginId}/${pluginId}.cover.jpg`);
+    if (this._adapter && this._vaultBase) {
+      const dir = `${this._vaultBase}/${pluginId}`;
+      try {
+        if (await this._adapter.exists(dir)) await (this._adapter as any).rmdir(dir, true);
+      } catch (e) {
+        console.warn(`[PreviewCache] evict ${pluginId}: adapter rmdir failed`, e);
+      }
+    }
+    if (this._basePath && this._hasFsAccess) {
+      const dir = `${this._basePath}/${pluginId}`;
+      try {
+        if (this._fs.existsSync(dir)) this._fs.rmSync(dir, { recursive: true, force: true });
+      } catch (e) {
+        console.warn(`[PreviewCache] evict ${pluginId}: fs rmSync failed`, e);
+      }
+    }
+  }
+
   private _readMetaFromFs(pluginId: string): ParsedPreviewMeta | null {
     if (!this._basePath || !this._fs) return null;
     const p = `${this._basePath}/${pluginId}/${pluginId}.md`;

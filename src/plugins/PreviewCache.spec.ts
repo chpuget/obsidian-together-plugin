@@ -175,4 +175,44 @@ describe('PreviewCache', () => {
       expect(cache.listCachedIds().sort()).toEqual(['games', 'music-band']);
     });
   });
+
+  describe('evict', () => {
+    it('removes per-plugin folder from disk and clears in-memory caches', async () => {
+      const evictTmpDir = nodeFs.mkdtempSync(join(tmpdir(), 'pc-evict-'));
+      const cache = new PreviewCache(evictTmpDir, nodeFs);
+      const pluginDir = join(evictTmpDir, 'together-community');
+      nodeFs.mkdirSync(pluginDir);
+      nodeFs.writeFileSync(join(pluginDir, 'together-community.md'), '---\nversion: "1.0.0"\npreviewChecksum: "abc"\n---\nhello');
+      // Warm in-memory cache
+      cache.readMeta('together-community');
+      expect(cache.readBody('together-community')).toBe('hello');
+      await cache.evict('together-community');
+      expect(nodeFs.existsSync(pluginDir)).toBe(false);
+      expect(cache.readMeta('together-community')).toBeNull();
+      expect(cache.readBody('together-community')).toBeNull();
+      nodeFs.rmSync(evictTmpDir, { recursive: true, force: true });
+    });
+
+    it('is a no-op when folder does not exist', async () => {
+      const evictTmpDir = nodeFs.mkdtempSync(join(tmpdir(), 'pc-evict2-'));
+      const cache = new PreviewCache(evictTmpDir, nodeFs);
+      await expect(cache.evict('nonexistent')).resolves.toBeUndefined();
+      nodeFs.rmSync(evictTmpDir, { recursive: true, force: true });
+    });
+
+    it('evicts via adapter when no basePath', async () => {
+      const adapter = {
+        exists: vi.fn().mockResolvedValue(true),
+        rmdir: vi.fn().mockResolvedValue(undefined),
+      };
+      const cache = new PreviewCache(null, undefined, adapter, '.obsidian/plugins/obsidian-together/previews');
+      (cache as any)['_metaCache'].set('together-community', { version: '1.0.0' });
+      await cache.evict('together-community');
+      expect(adapter.rmdir).toHaveBeenCalledWith(
+        '.obsidian/plugins/obsidian-together/previews/together-community',
+        true
+      );
+      expect(cache.readMeta('together-community')).toBeNull();
+    });
+  });
 });

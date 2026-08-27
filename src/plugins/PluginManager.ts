@@ -456,6 +456,8 @@ export class PluginManager {
 
   async syncEnabledPlugins(username: string): Promise<void> {
     console.log(`[PluginManager] syncEnabledPlugins start — user: ${username}`);
+    const serverIds = new Set(this._availablePlugins.map(p => p.id));
+    await this._cleanupObsoletePlugins(serverIds, username);
     const enabledInVault = await this._readEnabledPluginsFromVault(username);
     console.log(`[PluginManager] syncEnabledPlugins vault enabled: [${enabledInVault.join(', ')}]`);
 
@@ -598,6 +600,27 @@ export class PluginManager {
         return !/^roadmap:\s*true/m.test(content);
       } catch { return false; }
     });
+  }
+
+  private async _cleanupObsoletePlugins(serverIds: Set<string>, username: string): Promise<void> {
+    const settings = this.opts.getSettings();
+    if (settings.devMode) return;
+    if (serverIds.size === 0) return;
+    const adapter = this.opts.app?.vault?.adapter;
+    if (!adapter) return;
+    const dir = this._subPluginsDir();
+    if (!(await adapter.exists(dir))) return;
+    const { folders } = await adapter.list(dir);
+    for (const folderPath of folders) {
+      const id = folderPath.split('/').pop()!;
+      if (!id || serverIds.has(id)) continue;
+      console.log(`[PluginManager] cleanupObsoletePlugins removing: ${id}`);
+      await this.unloadPlugin(id);
+      try { await (adapter as any).rmdir(folderPath, true); } catch (e) { console.warn(`[PluginManager] cleanup failed to delete ${id}:`, e); }
+      delete this._installedVersions[id];
+      await this._removeFromEnabledPlugins(username, id);
+      try { await this.getPreviewCache().evict(id); } catch (e) { console.warn(`[PluginManager] cleanup preview evict failed for ${id}:`, e); }
+    }
   }
 
   private async _removeFromEnabledPlugins(username: string, id: string): Promise<void> {
