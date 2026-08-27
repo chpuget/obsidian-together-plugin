@@ -215,6 +215,15 @@ describe('PluginManager.syncEnabledPlugins', () => {
 
     expect(writtenContent).not.toContain('together-community');
     expect(writtenContent).toContain('music-band');
+    expect(adapter.rmdir).toHaveBeenCalledTimes(2);
+    expect(adapter.rmdir).toHaveBeenCalledWith(
+      '.obsidian/plugins/obsidian-together/sub-plugins/together-community',
+      true
+    );
+    expect(adapter.rmdir).toHaveBeenCalledWith(
+      '.obsidian/plugins/obsidian-together/previews/together-community',
+      true
+    );
   });
 
   it('skips cleanup when _availablePlugins is empty (offline guard)', async () => {

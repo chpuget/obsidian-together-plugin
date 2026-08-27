@@ -242,11 +242,6 @@ export class PreviewCache {
   }
 
   async evict(pluginId: string): Promise<void> {
-    this._metaCache.delete(pluginId);
-    this._bodyCache.delete(pluginId);
-    this._imageCache.delete(`${pluginId}/__refreshed`);
-    this._imageCache.delete(`${pluginId}/${pluginId}.jpg`);
-    this._imageCache.delete(`${pluginId}/${pluginId}.cover.jpg`);
     if (this._adapter && this._vaultBase) {
       const dir = `${this._vaultBase}/${pluginId}`;
       try {
@@ -263,6 +258,11 @@ export class PreviewCache {
         console.warn(`[PreviewCache] evict ${pluginId}: fs rmSync failed`, e);
       }
     }
+    this._metaCache.delete(pluginId);
+    this._bodyCache.delete(pluginId);
+    this._imageCache.delete(`${pluginId}/__refreshed`);
+    this._imageCache.delete(`${pluginId}/${pluginId}.jpg`);
+    this._imageCache.delete(`${pluginId}/${pluginId}.cover.jpg`);
   }
 
   private _readMetaFromFs(pluginId: string): ParsedPreviewMeta | null {

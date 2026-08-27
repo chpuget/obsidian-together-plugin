@@ -207,12 +207,14 @@ describe('PreviewCache', () => {
       };
       const cache = new PreviewCache(null, undefined, adapter, '.obsidian/plugins/obsidian-together/previews');
       (cache as any)['_metaCache'].set('together-community', { version: '1.0.0' });
+      (cache as any)['_bodyCache'].set('together-community', 'preview body');
       await cache.evict('together-community');
       expect(adapter.rmdir).toHaveBeenCalledWith(
         '.obsidian/plugins/obsidian-together/previews/together-community',
         true
       );
       expect(cache.readMeta('together-community')).toBeNull();
+      expect(cache.readBody('together-community')).toBeNull();
     });
   });
 });
