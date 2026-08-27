@@ -458,7 +458,8 @@ describe('PluginManager._removeFromEnabledPlugins', () => {
     };
     const pm = makePmWithAdapter(adapter);
     await pm['_removeFromEnabledPlugins']('alice', 'together-community');
-    expect(writtenContent).toBe('---\nenabledPlugins:\n  - music-band\n---\n\nuser content');
+    // Exact assertion: verify no spurious blank line before closing ---
+    expect(writtenContent).toEqual('---\nenabledPlugins:\n  - music-band\n---\n\nuser content');
   });
 
   it('writes enabledPlugins: [] when list becomes empty', async () => {
@@ -471,7 +472,8 @@ describe('PluginManager._removeFromEnabledPlugins', () => {
     };
     const pm = makePmWithAdapter(adapter);
     await pm['_removeFromEnabledPlugins']('alice', 'together-community');
-    expect(writtenContent).toBe('---\nenabledPlugins: []\n---\n\nbody');
+    // Exact assertion: verify enabledPlugins: [] line with no blank line before ---
+    expect(writtenContent).toEqual('---\nenabledPlugins: []\n---\n\nbody');
   });
 
   it('is a no-op when id is not in enabledPlugins', async () => {
@@ -500,6 +502,7 @@ describe('PluginManager._removeFromEnabledPlugins', () => {
 
   it('does not throw when write fails', async () => {
     const vaultContent = '---\nenabledPlugins:\n  - together-community\n---\n';
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const adapter = {
       exists: vi.fn().mockResolvedValue(true),
       read: vi.fn().mockResolvedValue(vaultContent),
@@ -507,5 +510,7 @@ describe('PluginManager._removeFromEnabledPlugins', () => {
     };
     const pm = makePmWithAdapter(adapter);
     await expect(pm['_removeFromEnabledPlugins']('alice', 'together-community')).resolves.toBeUndefined();
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 });
