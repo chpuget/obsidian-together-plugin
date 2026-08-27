@@ -438,3 +438,76 @@ describe('PluginManager.checkDependencies', () => {
     expect(pm.checkDependencies('nonexistent')).toHaveLength(0);
   });
 });
+
+describe('PluginManager._removeFromEnabledPlugins', () => {
+  function makePmWithAdapter(adapter: any) {
+    return new PluginManager({
+      app: { vault: { adapter } } as any,
+      getSettings: () => ({ devMode: false } as any),
+      getAuth: () => ({ username: 'alice', token: 'tok', serverUrl: 'http://localhost', isLoggedIn: true } as any),
+    });
+  }
+
+  it('removes the target id from enabledPlugins and keeps others', async () => {
+    const vaultContent = '---\nenabledPlugins:\n  - together-community\n  - music-band\n---\n\nuser content';
+    let writtenContent = '';
+    const adapter = {
+      exists: vi.fn().mockResolvedValue(true),
+      read: vi.fn().mockResolvedValue(vaultContent),
+      write: vi.fn().mockImplementation((_p: string, c: string) => { writtenContent = c; return Promise.resolve(); }),
+    };
+    const pm = makePmWithAdapter(adapter);
+    await pm['_removeFromEnabledPlugins']('alice', 'together-community');
+    expect(writtenContent).not.toContain('together-community');
+    expect(writtenContent).toContain('music-band');
+  });
+
+  it('writes enabledPlugins: [] when list becomes empty', async () => {
+    const vaultContent = '---\nenabledPlugins:\n  - together-community\n---\n\nbody';
+    let writtenContent = '';
+    const adapter = {
+      exists: vi.fn().mockResolvedValue(true),
+      read: vi.fn().mockResolvedValue(vaultContent),
+      write: vi.fn().mockImplementation((_p: string, c: string) => { writtenContent = c; return Promise.resolve(); }),
+    };
+    const pm = makePmWithAdapter(adapter);
+    await pm['_removeFromEnabledPlugins']('alice', 'together-community');
+    expect(writtenContent).toContain('enabledPlugins: []');
+    expect(writtenContent).not.toContain('together-community');
+  });
+
+  it('is a no-op when id is not in enabledPlugins', async () => {
+    const vaultContent = '---\nenabledPlugins:\n  - music-band\n---\n\nbody';
+    const adapter = {
+      exists: vi.fn().mockResolvedValue(true),
+      read: vi.fn().mockResolvedValue(vaultContent),
+      write: vi.fn(),
+    };
+    const pm = makePmWithAdapter(adapter);
+    await pm['_removeFromEnabledPlugins']('alice', 'nonexistent');
+    expect(adapter.write).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op when file does not exist', async () => {
+    const adapter = {
+      exists: vi.fn().mockResolvedValue(false),
+      read: vi.fn(),
+      write: vi.fn(),
+    };
+    const pm = makePmWithAdapter(adapter);
+    await pm['_removeFromEnabledPlugins']('alice', 'together-community');
+    expect(adapter.read).not.toHaveBeenCalled();
+    expect(adapter.write).not.toHaveBeenCalled();
+  });
+
+  it('does not throw when write fails', async () => {
+    const vaultContent = '---\nenabledPlugins:\n  - together-community\n---\n';
+    const adapter = {
+      exists: vi.fn().mockResolvedValue(true),
+      read: vi.fn().mockResolvedValue(vaultContent),
+      write: vi.fn().mockRejectedValue(new Error('disk full')),
+    };
+    const pm = makePmWithAdapter(adapter);
+    await expect(pm['_removeFromEnabledPlugins']('alice', 'together-community')).resolves.toBeUndefined();
+  });
+});

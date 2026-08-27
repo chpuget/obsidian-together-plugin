@@ -600,6 +600,34 @@ export class PluginManager {
     });
   }
 
+  private async _removeFromEnabledPlugins(username: string, id: string): Promise<void> {
+    try {
+      const userFilePath = `The Hub/users/${username}.md`;
+      const adapter = this.opts.app.vault.adapter;
+      if (!(await adapter.exists(userFilePath))) return;
+      const content = await adapter.read(userFilePath);
+      const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+      if (!fmMatch) return;
+      const fm = fmMatch[1];
+      const listMatch = fm.match(/enabledPlugins:\s*\n((?:\s*-\s*.+\n?)*)/);
+      if (!listMatch) return;
+      const currentList = listMatch[1]
+        .split('\n')
+        .map((l: string) => l.replace(/^\s*-\s*/, '').trim())
+        .filter(Boolean);
+      if (!currentList.includes(id)) return;
+      const newList = currentList.filter((p: string) => p !== id);
+      const newBlock = newList.length > 0
+        ? `enabledPlugins:\n${newList.map((p: string) => `  - ${p}`).join('\n')}\n`
+        : `enabledPlugins: []\n`;
+      const newFm = fm.replace(/enabledPlugins:\s*\n(?:\s*-\s*.+\n?)*/, newBlock);
+      const newContent = content.replace(/^---\n[\s\S]*?\n---/, `---\n${newFm}\n---`);
+      await adapter.write(userFilePath, newContent);
+    } catch (e) {
+      console.warn(`[PluginManager] _removeFromEnabledPlugins failed for ${username}/${id}:`, e);
+    }
+  }
+
   private async _loadInstalledVersions(): Promise<void> {
     const settings = this.opts.getSettings();
     if (settings.devMode) {
