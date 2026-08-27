@@ -513,4 +513,21 @@ describe('PluginManager._removeFromEnabledPlugins', () => {
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
   });
+
+  it('preserves keys that follow enabledPlugins in frontmatter', async () => {
+    const vaultContent = '---\ntitle: Alice\nenabledPlugins:\n  - together-community\n  - music-band\nrole: admin\n---\n\nbody';
+    let writtenContent = '';
+    const adapter = {
+      exists: vi.fn().mockResolvedValue(true),
+      read: vi.fn().mockResolvedValue(vaultContent),
+      write: vi.fn().mockImplementation((_p: string, c: string) => { writtenContent = c; return Promise.resolve(); }),
+    };
+    const pm = makePmWithAdapter(adapter);
+    await pm['_removeFromEnabledPlugins']('alice', 'together-community');
+    expect(writtenContent).not.toContain('together-community');
+    expect(writtenContent).toContain('role: admin');
+    // music-band and role must be on separate lines
+    expect(writtenContent).toContain('  - music-band\n');
+    expect(writtenContent).toContain('\nrole: admin');
+  });
 });

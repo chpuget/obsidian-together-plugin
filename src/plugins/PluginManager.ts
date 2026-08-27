@@ -620,7 +620,10 @@ export class PluginManager {
       const newBlock = newList.length > 0
         ? `enabledPlugins:\n${newList.map((p: string) => `  - ${p}`).join('\n')}`
         : `enabledPlugins: []`;
-      const newFm = fm.replace(/enabledPlugins:\s*\n(?:\s*-\s*.+\n?)*/, newBlock);
+      const newFm = fm.replace(
+        /(enabledPlugins:[^\n]*(?:\n\s*-[^\n]*)*)(\n?)/,
+        (_: string, _block: string, trailingNl: string) => newBlock + trailingNl
+      );
       const newContent = content.replace(/^---\n[\s\S]*?\n---/, `---\n${newFm}\n---`);
       await adapter.write(userFilePath, newContent);
     } catch (e) {
