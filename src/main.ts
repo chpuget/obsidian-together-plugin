@@ -123,7 +123,7 @@ export default class ObsidianTogetherPlugin extends Plugin {
     });
 
     // On startup, ensure plugins are loaded from disk even when not logged in
-    // (together-community must always run so it can display the login screen).
+    // (community must always run so it can display the login screen).
     void this.pluginManager.ensurePluginsLoaded()
       .then(() => this.eventBus.emit('community:plugins-refreshed'))
       .catch((e) => console.error('PluginManager startup load failed:', e));

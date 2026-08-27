@@ -121,8 +121,8 @@ export class PluginManager {
     const names = ordered.map(p => p.name).join(', ');
     new Notice(`Auto-updating plugins: ${names}`);
 
-    const tc = ordered.find(p => p.id === 'together-community');
-    const others = ordered.filter(p => p.id !== 'together-community');
+    const tc = ordered.find(p => p.id === 'community');
+    const others = ordered.filter(p => p.id !== 'community');
 
     for (const p of others) {
       await this.downloadPlugin(p);
@@ -244,31 +244,31 @@ export class PluginManager {
     await this._loadInstalledVersions();
     console.log(`[PluginManager] ensurePluginsLoaded installed versions: ${JSON.stringify(this._installedVersions)}`);
 
-    // together-community is always required
-    const tcInfo = this._availablePlugins.find((p) => p.id === 'together-community');
+    // community is always required
+    const tcInfo = this._availablePlugins.find((p) => p.id === 'community');
     if (tcInfo) {
-      const installed = this._installedVersions['together-community'];
+      const installed = this._installedVersions['community'];
       if (!installed || installed !== tcInfo.version) {
-        console.log(`[PluginManager] ensurePluginsLoaded downloading together-community (installed: ${installed ?? 'none'}, available: ${tcInfo.version})`);
+        console.log(`[PluginManager] ensurePluginsLoaded downloading community (installed: ${installed ?? 'none'}, available: ${tcInfo.version})`);
         try {
           await this.downloadPlugin(tcInfo);
         } catch (e) {
-          console.error('[PluginManager] ensurePluginsLoaded failed to download together-community:', e);
-          new Notice(`Failed to download together-community: ${(e as Error).message ?? e}`);
+          console.error('[PluginManager] ensurePluginsLoaded failed to download community:', e);
+          new Notice(`Failed to download community: ${(e as Error).message ?? e}`);
         }
       }
     }
-    if (!this._loadedPlugins.has('together-community')) {
-      const bundlePath = this._resolvedBundlePath('together-community');
+    if (!this._loadedPlugins.has('community')) {
+      const bundlePath = this._resolvedBundlePath('community');
       if (await this._bundleExists(bundlePath)) {
-        console.log(`[PluginManager] ensurePluginsLoaded loading together-community`);
-        await this.loadPlugin('together-community');
-        console.log(`[PluginManager] ensurePluginsLoaded together-community loaded`);
+        console.log(`[PluginManager] ensurePluginsLoaded loading community`);
+        await this.loadPlugin('community');
+        console.log(`[PluginManager] ensurePluginsLoaded community loaded`);
       } else {
-        console.log(`[PluginManager] ensurePluginsLoaded together-community bundle not found on disk`);
+        console.log(`[PluginManager] ensurePluginsLoaded community bundle not found on disk`);
       }
     } else {
-      console.log(`[PluginManager] ensurePluginsLoaded together-community already loaded`);
+      console.log(`[PluginManager] ensurePluginsLoaded community already loaded`);
     }
 
     // Load optional plugins the user previously enabled
@@ -277,7 +277,7 @@ export class PluginManager {
       const enabledIds = await this._readEnabledPluginsFromVault(authState.username);
       console.log(`[PluginManager] ensurePluginsLoaded optional plugins for ${authState.username}: [${enabledIds.join(', ')}]`);
       for (const id of enabledIds) {
-        if (id === 'together-community') continue;
+        if (id === 'community') continue;
         if (this._loadedPlugins.has(id)) continue;
         const bundlePath = this._resolvedBundlePath(id);
         if (await this._bundleExists(bundlePath)) {
@@ -459,7 +459,7 @@ export class PluginManager {
     const enabledInVault = await this._readEnabledPluginsFromVault(username);
     console.log(`[PluginManager] syncEnabledPlugins vault enabled: [${enabledInVault.join(', ')}]`);
 
-    const optionalLoaded = [...this._loadedPlugins.keys()].filter(id => id !== 'together-community');
+    const optionalLoaded = [...this._loadedPlugins.keys()].filter(id => id !== 'community');
     for (const id of optionalLoaded) {
       if (!enabledInVault.includes(id)) {
         console.log(`[PluginManager] syncEnabledPlugins unloading removed plugin: ${id}`);
@@ -468,7 +468,7 @@ export class PluginManager {
     }
 
     for (const id of enabledInVault) {
-      if (id === 'together-community') continue;
+      if (id === 'community') continue;
       if (this._loadedPlugins.has(id)) { console.log(`[PluginManager] syncEnabledPlugins skip (already loaded): ${id}`); continue; }
       const info = this._availablePlugins.find(p => p.id === id);
       if (!info) { console.log(`[PluginManager] syncEnabledPlugins skip (not in available list): ${id}`); continue; }

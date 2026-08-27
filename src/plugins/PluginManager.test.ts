@@ -96,9 +96,9 @@ describe('PluginManager.syncEnabledPlugins', () => {
     expect(load).toHaveBeenCalledWith('games');
   });
 
-  it('never touches together-community', async () => {
+  it('never touches community', async () => {
     const pm = makepm();
-    pm['_readEnabledPluginsFromVault'] = vi.fn().mockResolvedValue(['together-community']);
+    pm['_readEnabledPluginsFromVault'] = vi.fn().mockResolvedValue(['community']);
     const load = vi.spyOn(pm, 'loadPlugin').mockResolvedValue(undefined);
     await pm.syncEnabledPlugins('alice');
     expect(load).not.toHaveBeenCalled();
@@ -113,13 +113,13 @@ describe('PluginManager.syncEnabledPlugins', () => {
     expect(load).not.toHaveBeenCalled();
   });
 
-  it('does not unload together-community even when absent from enabledPlugins', async () => {
+  it('does not unload community even when absent from enabledPlugins', async () => {
     const pm = makepm();
-    pm['_loadedPlugins'].set('together-community', { unload: vi.fn() });
+    pm['_loadedPlugins'].set('community', { unload: vi.fn() });
     pm['_readEnabledPluginsFromVault'] = vi.fn().mockResolvedValue([]);
     const unload = vi.spyOn(pm, 'unloadPlugin');
     await pm.syncEnabledPlugins('alice');
-    expect(unload).not.toHaveBeenCalledWith('together-community');
+    expect(unload).not.toHaveBeenCalledWith('community');
   });
 
   it('loads without downloading when online and version already matches', async () => {
@@ -366,33 +366,33 @@ describe('resolveUpdateOrder', () => {
   }
 
   it('returns single plugin unchanged', () => {
-    const result = resolveUpdateOrder([info('together-community')]);
-    expect(result.map(p => p.id)).toEqual(['together-community']);
+    const result = resolveUpdateOrder([info('community')]);
+    expect(result.map(p => p.id)).toEqual(['community']);
   });
 
   it('places dependency before dependent', () => {
     const result = resolveUpdateOrder([
-      info('music-band', ['obsidian-together', 'together-community']),
-      info('together-community', ['obsidian-together']),
+      info('music-band', ['obsidian-together', 'community']),
+      info('community', ['obsidian-together']),
     ]);
-    expect(result.map(p => p.id)).toEqual(['together-community', 'music-band']);
+    expect(result.map(p => p.id)).toEqual(['community', 'music-band']);
   });
 
-  it('resolves three-level chain: together-community → music-band → behringer-console', () => {
+  it('resolves three-level chain: community → music-band → behringer-console', () => {
     const result = resolveUpdateOrder([
-      info('behringer-console', ['obsidian-together', 'together-community', 'music-band']),
-      info('music-band', ['obsidian-together', 'together-community']),
-      info('together-community', ['obsidian-together']),
+      info('behringer-console', ['obsidian-together', 'community', 'music-band']),
+      info('music-band', ['obsidian-together', 'community']),
+      info('community', ['obsidian-together']),
     ]);
-    expect(result.map(p => p.id)).toEqual(['together-community', 'music-band', 'behringer-console']);
+    expect(result.map(p => p.id)).toEqual(['community', 'music-band', 'behringer-console']);
   });
 
   it('ignores deps not in the update list (e.g. obsidian-together)', () => {
     const result = resolveUpdateOrder([
-      info('together-community', ['obsidian-together']),
-      info('games', ['obsidian-together', 'together-community']),
+      info('community', ['obsidian-together']),
+      info('games', ['obsidian-together', 'community']),
     ]);
-    expect(result.map(p => p.id)).toEqual(['together-community', 'games']);
+    expect(result.map(p => p.id)).toEqual(['community', 'games']);
   });
 
   it('handles plugins with no requires', () => {
@@ -405,31 +405,31 @@ describe('PluginManager.checkDependencies', () => {
   it('returns empty when all deps are loaded', () => {
     const pm = makepm();
     pm['_availablePlugins'] = [
-      { id: 'together-community', name: 'Together Community', requires: ['obsidian-together'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
-      { id: 'music-band', name: 'Music Band', requires: ['obsidian-together', 'together-community'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
+      { id: 'community', name: 'Community', requires: ['obsidian-together'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
+      { id: 'music-band', name: 'Music Band', requires: ['obsidian-together', 'community'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
     ] as any;
-    pm['_loadedPlugins'] = new Map([['together-community', {}]]);
+    pm['_loadedPlugins'] = new Map([['community', {}]]);
     expect(pm.checkDependencies('music-band')).toHaveLength(0);
   });
 
   it('returns missing dep when not loaded', () => {
     const pm = makepm();
     pm['_availablePlugins'] = [
-      { id: 'together-community', name: 'Together Community', requires: ['obsidian-together'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
-      { id: 'music-band', name: 'Music Band', requires: ['obsidian-together', 'together-community'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
+      { id: 'community', name: 'Community', requires: ['obsidian-together'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
+      { id: 'music-band', name: 'Music Band', requires: ['obsidian-together', 'community'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
     ] as any;
-    pm['_loadedPlugins'] = new Map(); // together-community NOT loaded
+    pm['_loadedPlugins'] = new Map(); // community NOT loaded
     const missing = pm.checkDependencies('music-band');
-    expect(missing.map((p: any) => p.id)).toEqual(['together-community']);
+    expect(missing.map((p: any) => p.id)).toEqual(['community']);
   });
 
   it('ignores obsidian-together (always satisfied)', () => {
     const pm = makepm();
     pm['_availablePlugins'] = [
-      { id: 'together-community', name: 'Together Community', requires: ['obsidian-together'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
+      { id: 'community', name: 'Community', requires: ['obsidian-together'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
     ] as any;
     pm['_loadedPlugins'] = new Map();
-    expect(pm.checkDependencies('together-community')).toHaveLength(0);
+    expect(pm.checkDependencies('community')).toHaveLength(0);
   });
 
   it('returns empty for unknown plugin id', () => {
