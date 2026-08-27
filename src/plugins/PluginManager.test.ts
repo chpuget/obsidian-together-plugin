@@ -156,10 +156,9 @@ describe('PluginManager.syncEnabledPlugins', () => {
   it('unloads and deletes obsolete plugin folder from disk', async () => {
     const adapter = {
       exists: vi.fn().mockResolvedValue(true),
-      list: vi.fn().mockResolvedValue({
-        files: [],
-        folders: ['.obsidian/plugins/obsidian-together/sub-plugins/together-community'],
-      }),
+      list: vi.fn()
+        .mockResolvedValueOnce({ files: [], folders: ['.obsidian/plugins/obsidian-together/sub-plugins/together-community'] })
+        .mockResolvedValueOnce({ files: [], folders: [] }),
       rmdir: vi.fn().mockResolvedValue(undefined),
       read: vi.fn().mockResolvedValue(''),
       write: vi.fn().mockResolvedValue(undefined),
@@ -193,10 +192,9 @@ describe('PluginManager.syncEnabledPlugins', () => {
     let writtenContent = '';
     const adapter = {
       exists: vi.fn().mockResolvedValue(true),
-      list: vi.fn().mockResolvedValue({
-        files: [],
-        folders: ['.obsidian/plugins/obsidian-together/sub-plugins/together-community'],
-      }),
+      list: vi.fn()
+        .mockResolvedValueOnce({ files: [], folders: ['.obsidian/plugins/obsidian-together/sub-plugins/together-community'] })
+        .mockResolvedValueOnce({ files: [], folders: ['.obsidian/plugins/obsidian-together/previews/together-community'] }),
       rmdir: vi.fn().mockResolvedValue(undefined),
       read: vi.fn().mockResolvedValue(vaultContent),
       write: vi.fn().mockImplementation((_p: string, c: string) => { writtenContent = c; return Promise.resolve(); }),
@@ -246,6 +244,33 @@ describe('PluginManager.syncEnabledPlugins', () => {
     await pm.syncEnabledPlugins('alice');
 
     expect(adapter.rmdir).not.toHaveBeenCalled();
+  });
+
+  it('evicts stale preview in devMode even though sub-plugin cleanup is skipped', async () => {
+    const adapter = {
+      exists: vi.fn().mockResolvedValue(true),
+      list: vi.fn().mockResolvedValue({
+        files: [],
+        folders: ['.obsidian/plugins/obsidian-together/previews/together-community'],
+      }),
+      rmdir: vi.fn().mockResolvedValue(undefined),
+    };
+    const pm = new PluginManager({
+      app: { vault: { adapter } } as any,
+      getSettings: () => ({ devMode: true } as any),
+      getAuth: () => ({ username: 'alice', token: 'tok', serverUrl: 'http://localhost', isLoggedIn: true } as any),
+    });
+    pm['_availablePlugins'] = [
+      { id: 'community', version: '1.0.0', name: 'Community', description: '', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
+    ] as any;
+    pm['_readEnabledPluginsFromVault'] = vi.fn().mockResolvedValue([]);
+
+    await pm.syncEnabledPlugins('alice');
+
+    expect(adapter.rmdir).toHaveBeenCalledWith(
+      '.obsidian/plugins/obsidian-together/previews/together-community',
+      true
+    );
   });
 });
 

@@ -604,22 +604,37 @@ export class PluginManager {
 
   private async _cleanupObsoletePlugins(serverIds: Set<string>, username: string): Promise<void> {
     const settings = this.opts.getSettings();
-    if (settings.devMode) return;
     if (serverIds.size === 0) return;
     const adapter = this.opts.app?.vault?.adapter;
     if (!adapter) return;
-    const dir = this._subPluginsDir();
-    if (!(await adapter.exists(dir))) return;
-    const { folders } = await adapter.list(dir);
-    for (const folderPath of folders) {
-      const id = folderPath.split('/').pop()!;
-      if (!id || serverIds.has(id)) continue;
-      console.log(`[PluginManager] cleanupObsoletePlugins removing: ${id}`);
-      await this.unloadPlugin(id);
-      try { await (adapter as any).rmdir(folderPath, true); } catch (e) { console.warn(`[PluginManager] cleanup failed to delete ${id}:`, e); }
-      delete this._installedVersions[id];
-      await this._removeFromEnabledPlugins(username, id);
-      try { await this.getPreviewCache().evict(id); } catch (e) { console.warn(`[PluginManager] cleanup preview evict failed for ${id}:`, e); }
+
+    // Sub-plugin folder cleanup — skipped in devMode (dev repo source files must not be deleted)
+    if (!settings.devMode) {
+      const dir = this._subPluginsDir();
+      if (await adapter.exists(dir)) {
+        const { folders } = await adapter.list(dir);
+        for (const folderPath of folders) {
+          const id = folderPath.split('/').pop()!;
+          if (!id || serverIds.has(id)) continue;
+          console.log(`[PluginManager] cleanupObsoletePlugins removing sub-plugin: ${id}`);
+          await this.unloadPlugin(id);
+          try { await (adapter as any).rmdir(folderPath, true); } catch (e) { console.warn(`[PluginManager] cleanup failed to delete ${id}:`, e); }
+          delete this._installedVersions[id];
+          await this._removeFromEnabledPlugins(username, id);
+        }
+      }
+    }
+
+    // Preview cache cleanup — always runs (including devMode); evicts orphaned preview folders
+    const previewsDir = '.obsidian/plugins/obsidian-together/previews';
+    if (await adapter.exists(previewsDir)) {
+      const { folders: previewFolders } = await adapter.list(previewsDir);
+      for (const folderPath of previewFolders) {
+        const id = folderPath.split('/').pop()!;
+        if (!id || serverIds.has(id)) continue;
+        console.log(`[PluginManager] cleanupObsoletePlugins evicting stale preview: ${id}`);
+        try { await this.getPreviewCache().evict(id); } catch (e) { console.warn(`[PluginManager] cleanup preview evict failed for ${id}:`, e); }
+      }
     }
   }
 
