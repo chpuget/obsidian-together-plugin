@@ -1,4 +1,4 @@
-import { Plugin } from "obsidian";
+import { Plugin, Platform } from "obsidian";
 import EventEmitter from "eventemitter3";
 import type { TogetherAPI, TogetherSettings, SavedAccount } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
@@ -195,6 +195,7 @@ export default class ObsidianTogetherPlugin extends Plugin {
 
   /** Creates or removes the plugin-core symlink based on devMode state. */
   manageDevSymlink(enable: boolean): { ok: boolean; message: string } {
+    if (Platform.isMobile) return { ok: false, message: 'Dev symlink: not supported on mobile' };
     try {
       const fs = require('fs') as typeof import('fs');
       const targetPath = this._vaultPluginMainPath();
