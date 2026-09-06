@@ -25,10 +25,17 @@ export class PreviewCache {
     fs?: any,
     private readonly _adapter?: any,
     private readonly _vaultBase?: string,
+    isMobile = false,
   ) {
     this._available = !!(_basePath || (_adapter && _vaultBase));
-    this._fs = _basePath ? (fs ?? PreviewCache._requireFs()) : PreviewCache._requireFs();
-    this._hasFsAccess = PreviewCache._checkFsIsReal(this._fs);
+    if (isMobile) {
+      // Obsidian mobile intercepts require('fs') before any try-catch can run — skip entirely.
+      this._fs = null;
+      this._hasFsAccess = false;
+    } else {
+      this._fs = _basePath ? (fs ?? PreviewCache._requireFs()) : PreviewCache._requireFs();
+      this._hasFsAccess = PreviewCache._checkFsIsReal(this._fs);
+    }
     console.log(`[PreviewCache] init: basePath=${!!_basePath} adapter=${!!_adapter} hasFsAccess=${this._hasFsAccess}`);
   }
 
@@ -230,7 +237,7 @@ export class PreviewCache {
   listCachedIds(): string[] {
     if (!this._available) return [];
     const ids = new Set<string>(this._metaCache.keys());
-    if (this._basePath && this._fs.existsSync(this._basePath)) {
+    if (this._basePath && this._fs && this._fs.existsSync(this._basePath)) {
       try {
         const entries: string[] = this._fs.readdirSync(this._basePath) ?? [];
         entries

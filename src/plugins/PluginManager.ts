@@ -1,5 +1,5 @@
 import type { App } from 'obsidian';
-import { normalizePath, Notice } from 'obsidian';
+import { normalizePath, Notice, Platform } from 'obsidian';
 import { unzipSync, strFromU8 } from 'fflate';
 import type { TogetherSettings, AuthState, PluginInfo } from '../types';
 import { PreviewCache } from './PreviewCache';
@@ -150,6 +150,7 @@ export class PluginManager {
         undefined,
         adapter,
         vaultBase,
+        Platform.isMobile,
       );
     }
     return this._previewCache;

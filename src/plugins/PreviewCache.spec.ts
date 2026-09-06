@@ -176,6 +176,46 @@ describe('PreviewCache', () => {
     });
   });
 
+  describe('mobile mode (isMobile=true)', () => {
+    it('does not throw or call require fs on construction', () => {
+      expect(() => new PreviewCache(null, undefined, undefined, undefined, true)).not.toThrow();
+    });
+
+    it('isCurrent returns false without a session refresh even when meta matches', () => {
+      const adapter = {
+        exists: vi.fn().mockResolvedValue(false),
+        mkdir: vi.fn().mockResolvedValue(undefined),
+        write: vi.fn().mockResolvedValue(undefined),
+        writeBinary: vi.fn().mockResolvedValue(undefined),
+      };
+      const cache = new PreviewCache(null, undefined, adapter, '.obsidian/previews', true);
+      // Seed meta directly (simulates data carried over from a previous run)
+      (cache as any)['_metaCache'].set('plug', { version: '1.0.0', previewChecksum: 'abc' });
+      // No __refreshed sentinel → must be stale on mobile
+      expect(cache.isCurrent('plug', '1.0.0', 'abc')).toBe(false);
+    });
+
+    it('isCurrent returns true after a successful refresh', async () => {
+      const adapter = {
+        exists: vi.fn().mockResolvedValue(false),
+        mkdir: vi.fn().mockResolvedValue(undefined),
+        write: vi.fn().mockResolvedValue(undefined),
+        writeBinary: vi.fn().mockResolvedValue(undefined),
+      };
+      const cache = new PreviewCache(null, undefined, adapter, '.obsidian/previews', true);
+      vi.stubGlobal('fetch', mockFetch({ 'https://cdn/p.md': '---\nname: "x"\n---\n' }));
+      await cache.refresh('plug', '1.0.0', 'abc', { md: 'https://cdn/p.md' });
+      // After refresh the sentinel is set — isCurrent should now be true
+      expect(cache.isCurrent('plug', '1.0.0', 'abc')).toBe(true);
+    });
+
+    it('listCachedIds does not crash with null fs', () => {
+      const adapter = { exists: vi.fn(), mkdir: vi.fn(), write: vi.fn(), writeBinary: vi.fn() };
+      const cache = new PreviewCache('/android/base/path', undefined, adapter, '.obsidian/previews', true);
+      expect(() => cache.listCachedIds()).not.toThrow();
+    });
+  });
+
   describe('evict', () => {
     it('removes per-plugin folder from disk and clears in-memory caches', async () => {
       const evictTmpDir = nodeFs.mkdtempSync(join(tmpdir(), 'pc-evict-'));
