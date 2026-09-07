@@ -22,6 +22,7 @@ export class AuthManager {
     serverUrl: null,
     isLoggedIn: false,
     isAdmin: false,
+    branch: null,
   };
 
   constructor(private getSettings: () => TogetherSettings) {}
@@ -51,7 +52,12 @@ export class AuthManager {
       throw new Error(Array.isArray(msg) ? msg.join(", ") : String(msg));
     }
 
-    const { token, user } = await response.json() as { token: string; user: { id: string; username: string; displayName?: string; isAdmin?: boolean } };
+    const data = await response.json() as {
+      token: string;
+      user: { id: string; username: string; displayName?: string; isAdmin?: boolean };
+      branch?: string;
+    };
+    const { token, user } = data;
 
     const settings = this.getSettings();
     const idx = settings.accounts.findIndex(a => a.username === user.username && a.serverUrl === serverUrl);
@@ -62,6 +68,7 @@ export class AuthManager {
       token,
       displayName: user.displayName,
       isAdmin: user.isAdmin ?? false,
+      branch: data.branch,
     };
 
     const storage = getSafeStorage();
@@ -77,7 +84,7 @@ export class AuthManager {
       settings.activeAccountIndex = settings.accounts.length - 1;
     }
 
-    this.state = { token, userId: user.id, username: user.username, serverUrl, isLoggedIn: true, isAdmin: user.isAdmin ?? false };
+    this.state = { token, userId: user.id, username: user.username, serverUrl, isLoggedIn: true, isAdmin: user.isAdmin ?? false, branch: data.branch ?? null };
     return account;
   }
 
@@ -92,6 +99,7 @@ export class AuthManager {
     if (account.token) {
       const ok = await this.validateToken(account.token, account.serverUrl);
       if (ok) {
+        this.state = { ...this.state, branch: account.branch ?? null };
         settings.activeAccountIndex = index;
         return true;
       }
@@ -118,6 +126,7 @@ export class AuthManager {
       serverUrl: account.serverUrl,
       isLoggedIn: false,
       isAdmin: account.isAdmin ?? false,
+      branch: null,
     };
     return false;
   }
@@ -139,7 +148,7 @@ export class AuthManager {
       settings.accounts[idx].token = "";
     }
     settings.activeAccountIndex = -1;
-    this.state = { token: null, userId: null, username: null, serverUrl: null, isLoggedIn: false, isAdmin: false };
+    this.state = { token: null, userId: null, username: null, serverUrl: null, isLoggedIn: false, isAdmin: false, branch: null };
   }
 
   /** Remove a saved account entirely. */
@@ -148,7 +157,7 @@ export class AuthManager {
     settings.accounts.splice(index, 1);
     if (settings.activeAccountIndex === index) {
       settings.activeAccountIndex = -1;
-      this.state = { token: null, userId: null, username: null, serverUrl: null, isLoggedIn: false, isAdmin: false };
+      this.state = { token: null, userId: null, username: null, serverUrl: null, isLoggedIn: false, isAdmin: false, branch: null };
     } else if (settings.activeAccountIndex > index) {
       settings.activeAccountIndex--;
     }
@@ -166,7 +175,7 @@ export class AuthManager {
       });
       if (response.status === 200) {
         const user = await response.json() as { id: string; username: string; displayName?: string; isAdmin?: boolean };
-        this.state = { token, userId: user.id, username: user.username, serverUrl, isLoggedIn: true, isAdmin: user.isAdmin ?? false };
+        this.state = { token, userId: user.id, username: user.username, serverUrl, isLoggedIn: true, isAdmin: user.isAdmin ?? false, branch: null };
         return true;
       }
     } catch {

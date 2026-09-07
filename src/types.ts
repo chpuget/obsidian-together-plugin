@@ -69,6 +69,7 @@ export interface AuthState {
   readonly serverUrl: string | null;
   readonly isLoggedIn: boolean;
   readonly isAdmin: boolean;
+  readonly branch: string | null;   // "dev" | "prod" | null (null = prod default)
 }
 
 /** A saved account credential (persisted in data.json). */
@@ -80,6 +81,7 @@ export interface SavedAccount {
   displayName?: string;
   encryptedPassword?: string; // base64-encoded Buffer from electron safeStorage
   isAdmin?: boolean;
+  branch?: string;   // "dev" | "prod" — absent means prod
 }
 
 export interface TogetherSettings {
