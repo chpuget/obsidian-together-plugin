@@ -299,7 +299,7 @@ export class PluginManager {
     if (settings.devMode) return; // dev mode: skip download, load from disk directly
 
     const auth = this.opts.getAuth();
-    const downloadUrl = `${auth.serverUrl}/plugins/${info.id}/download`;
+    const downloadUrl = `${auth.serverUrl}/plugins/${info.id}/download${auth.branch === 'dev' ? '?branch=dev' : ''}`;
     const r = await fetch(downloadUrl, {
       headers: { Authorization: `Bearer ${auth.token}` },
     });
