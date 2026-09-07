@@ -36,15 +36,13 @@ export class TogetherSettingTab extends PluginSettingTab {
   // ── Connected state ───────────────────────────────────────────────────────────
 
   private renderLoggedIn(root: HTMLElement): void {
-    const { username, serverUrl } = this.plugin.togetherAPI.auth;
-    const serverLabel = (serverUrl ?? "").replace(/^https?:\/\//, "");
+    const { username } = this.plugin.togetherAPI.auth;
 
     const desc = document.createDocumentFragment();
     desc.append("Connected as ");
     const b = document.createElement("strong");
     b.textContent = username ?? "";
     desc.append(b);
-    desc.append(` @ ${serverLabel}`);
 
     new Setting(root)
       .setDesc(desc)
