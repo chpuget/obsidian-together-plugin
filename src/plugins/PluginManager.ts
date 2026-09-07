@@ -180,7 +180,8 @@ export class PluginManager {
     const auth = this.opts.getAuth();
     if (!auth.isLoggedIn || !auth.serverUrl || !auth.token) return;
     try {
-      const r = await fetch(`${auth.serverUrl}/plugins`, {
+      const pluginsUrl = `${auth.serverUrl}/plugins${auth.branch === 'dev' ? '?branch=dev' : ''}`;
+      const r = await fetch(pluginsUrl, {
         headers: { Authorization: `Bearer ${auth.token}` },
       });
       if (r.ok) {
