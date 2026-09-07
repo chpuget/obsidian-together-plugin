@@ -218,7 +218,7 @@ export class PluginManager {
     if (auth.isLoggedIn && auth.serverUrl && auth.token) {
       try {
         console.log(`[PluginManager] ensurePluginsLoaded fetching plugin list from server…`);
-        const r = await fetch(`${auth.serverUrl}/plugins`, {
+        const r = await fetch(`${auth.serverUrl}/plugins${auth.branch === 'dev' ? '?branch=dev' : ''}`, {
           headers: { Authorization: `Bearer ${auth.token}` },
         });
         if (r.ok) {
