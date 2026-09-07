@@ -99,7 +99,7 @@ export class AuthManager {
     if (account.token) {
       const ok = await this.validateToken(account.token, account.serverUrl);
       if (ok) {
-        this.state = { ...this.state, branch: account.branch ?? null };
+        // validateToken already populated this.state.branch from /auth/me
         settings.activeAccountIndex = index;
         return true;
       }
@@ -174,8 +174,9 @@ export class AuthManager {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.status === 200) {
-        const user = await response.json() as { id: string; username: string; displayName?: string; isAdmin?: boolean };
-        this.state = { token, userId: user.id, username: user.username, serverUrl, isLoggedIn: true, isAdmin: user.isAdmin ?? false, branch: null };
+        const user = await response.json() as { id: string; username: string; displayName?: string; isAdmin?: boolean; branch?: string };
+        const branch = user.branch === 'dev' ? 'dev' : (user.branch ?? null);
+        this.state = { token, userId: user.id, username: user.username, serverUrl, isLoggedIn: true, isAdmin: user.isAdmin ?? false, branch };
         return true;
       }
     } catch {
