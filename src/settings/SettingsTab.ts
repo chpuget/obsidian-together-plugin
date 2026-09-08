@@ -4,6 +4,30 @@ import type ObsidianTogetherPlugin from "../main";
 const LOCAL_URL = "http://localhost:3001";
 const PROD_URL  = "https://obsidian-together-production.up.railway.app";
 
+const CARD_STYLE_ID = "together-settings-card-style";
+
+function injectCardStyles(): void {
+  if (document.getElementById(CARD_STYLE_ID)) return;
+  const style = document.createElement("style");
+  style.id = CARD_STYLE_ID;
+  style.textContent = `
+    .together-card {
+      border: 1px solid var(--background-modifier-border);
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    .together-card .setting-item {
+      border-top: none !important;
+      border-bottom: 1px solid var(--background-modifier-border);
+    }
+    .together-card .setting-item:last-child {
+      border-bottom: none;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 export class TogetherSettingTab extends PluginSettingTab {
 
   private _lastUsername: string | null = null;
@@ -25,6 +49,7 @@ export class TogetherSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
+    injectCardStyles();
     containerEl.createEl("h2", { text: "Obsidian Together" });
 
     if (this.plugin.togetherAPI.auth.isLoggedIn) {
@@ -109,8 +134,7 @@ export class TogetherSettingTab extends PluginSettingTab {
     let password = "";
 
     // Frame card wrapping the login fields
-    const card = root.createDiv();
-    card.style.cssText = "border:1px solid var(--background-modifier-border); border-radius:10px; overflow:hidden; margin-bottom:16px;";
+    const card = root.createDiv({ cls: "together-card" });
 
     // Server dropdown (dev mode only)
     if (isDevMode) {
@@ -218,8 +242,9 @@ export class TogetherSettingTab extends PluginSettingTab {
 
   private renderDeveloperSection(root: HTMLElement): void {
     root.createEl("h3", { text: "Developer" });
+    const card = root.createDiv({ cls: "together-card" });
 
-    new Setting(root)
+    new Setting(card)
       .setName("Developer mode")
       .setDesc("Load plugins from local repo instead of downloading.")
       .addToggle(toggle => {
@@ -240,7 +265,7 @@ export class TogetherSettingTab extends PluginSettingTab {
       });
 
     if (this.plugin.settings.devMode) {
-      new Setting(root)
+      new Setting(card)
         .setName("Repo root path")
         .setDesc("Absolute path to the obsidian-together monorepo root.")
         .addText(t => {
@@ -259,11 +284,11 @@ export class TogetherSettingTab extends PluginSettingTab {
       const corePath = (this.plugin as any)._devPluginCorePath?.() ?? "(unknown)";
       const fs = typeof require !== "undefined" ? (() => { try { return require("fs"); } catch { return null; } })() : null;
       const coreExists = fs ? fs.existsSync(corePath) : false;
-      new Setting(root)
+      new Setting(card)
         .setName("Plugin-core source")
         .setDesc(`${corePath} ${coreExists ? "✓" : "✗ not found"}`);
 
-      new Setting(root)
+      new Setting(card)
         .addButton(btn =>
           btn.setButtonText("Reload plugins").onClick(async () => {
             await this.plugin.pluginManager.reloadAll();
