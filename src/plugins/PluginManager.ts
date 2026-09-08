@@ -8,6 +8,7 @@ export interface PluginManagerOptions {
   app: App;
   getSettings: () => TogetherSettings;
   getAuth: () => AuthState;
+  onPluginLoaded?: (id: string, instance: unknown) => void;
 }
 
 export function parseVersion(v: string): { major: number; minor: number; build: number } | null {
@@ -426,6 +427,7 @@ export class PluginManager {
     const instance = new Klass(this.opts.app, manifest);
     await instance.load();
     this._loadedPlugins.set(id, instance);
+    this.opts.onPluginLoaded?.(id, instance);
   }
 
   async unloadPlugin(id: string): Promise<void> {

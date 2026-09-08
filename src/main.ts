@@ -34,6 +34,7 @@ export default class ObsidianTogetherPlugin extends Plugin {
       app: this.app,
       getSettings: () => this.settings,
       getAuth: () => this.authManager.getState(),
+      onPluginLoaded: (id, instance) => this.registerExtension(id, instance),
     });
 
     // Restore session from saved accounts
