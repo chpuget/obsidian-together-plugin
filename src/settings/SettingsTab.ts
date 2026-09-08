@@ -1,10 +1,12 @@
-import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting, setIcon } from "obsidian";
 import type ObsidianTogetherPlugin from "../main";
 
 const LOCAL_URL = "http://localhost:3001";
 const PROD_URL  = "https://obsidian-together-production.up.railway.app";
 
 export class TogetherSettingTab extends PluginSettingTab {
+
+  private _lastUsername: string | null = null;
 
   private readonly reloginHandler = () => {
     this.plugin.authManager.logout();
@@ -31,11 +33,6 @@ export class TogetherSettingTab extends PluginSettingTab {
       this.renderLoginForm(containerEl);
     }
 
-    containerEl.createEl("hr");
-    this.renderGeneralSection(containerEl);
-    containerEl.createEl("hr");
-    this.renderDangerSection(containerEl);
-
     if (this.plugin.settings.devMode) {
       containerEl.createEl("hr");
       this.renderDeveloperSection(containerEl);
@@ -57,6 +54,7 @@ export class TogetherSettingTab extends PluginSettingTab {
       .setDesc(desc)
       .addButton(btn =>
         btn.setButtonText("Log out").setWarning().onClick(async () => {
+          this._lastUsername = this.plugin.togetherAPI.auth.username;
           await this.plugin.togetherAPI.logout();
           this.display();
         })
@@ -107,13 +105,87 @@ export class TogetherSettingTab extends PluginSettingTab {
       }
     }
 
-    let username = saved?.username ?? "";
+    let username = saved?.username ?? this._lastUsername ?? "";
     let password = "";
 
-    const errorEl = root.createEl("p", { cls: "setting-item-description" });
-    errorEl.style.display = "none";
-    errorEl.style.color = "var(--text-error)";
+    // Frame card wrapping the login fields
+    const card = root.createDiv();
+    card.style.cssText = "border:1px solid var(--background-modifier-border); border-radius:10px; overflow:hidden; margin-bottom:16px;";
 
+    // Server dropdown (dev mode only)
+    if (isDevMode) {
+      let customSetting: Setting;
+      let customUrl = defaultDropdownValue === "custom" ? (saved?.serverUrl ?? "") : "";
+
+      new Setting(card)
+        .setName("Server")
+        .addDropdown(drop => {
+          drop.addOption(PROD_URL, "Production");
+          drop.addOption(LOCAL_URL, "Local (localhost:3001)");
+          drop.addOption("custom", "Custom…");
+          drop.setValue(defaultDropdownValue);
+          drop.onChange(v => {
+            if (v !== "custom") {
+              serverUrl = v;
+              customSetting.settingEl.style.display = "none";
+            } else {
+              serverUrl = customUrl;
+              customSetting.settingEl.style.display = "";
+            }
+          });
+        });
+
+      customSetting = new Setting(card)
+        .setName("Custom server URL")
+        .addText(t => {
+          t.setPlaceholder("https://…");
+          t.setValue(customUrl);
+          t.onChange(v => { customUrl = v.trim(); serverUrl = customUrl; });
+        });
+      customSetting.settingEl.style.display = defaultDropdownValue === "custom" ? "" : "none";
+    }
+
+    // Username
+    new Setting(card)
+      .setName("Username")
+      .addText(t => {
+        t.setValue(username);
+        t.onChange(v => { username = v.trim(); });
+      });
+
+    // Password — eye button injected inside the input
+    let passwordInputEl!: HTMLInputElement;
+    let showPassword = false;
+    const pwdSetting = new Setting(card)
+      .setName("Password")
+      .addText(t => {
+        passwordInputEl = t.inputEl;
+        t.inputEl.type = "password";
+        t.inputEl.style.paddingRight = "30px";
+        t.onChange(v => { password = v; });
+      });
+
+    const ctrl = pwdSetting.settingEl.querySelector<HTMLElement>(".setting-item-control");
+    if (ctrl) {
+      ctrl.style.position = "relative";
+      const eye = document.createElement("button");
+      eye.type = "button";
+      eye.setAttribute("aria-label", "Toggle password visibility");
+      eye.style.cssText = "position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:2px;line-height:1;color:var(--text-muted);";
+      setIcon(eye, "eye");
+      eye.addEventListener("click", () => {
+        showPassword = !showPassword;
+        passwordInputEl.type = showPassword ? "text" : "password";
+        setIcon(eye, showPassword ? "eye-off" : "eye");
+      });
+      ctrl.appendChild(eye);
+    }
+
+    // Error element
+    const errorEl = card.createEl("p");
+    errorEl.style.cssText = "display:none; margin:0; padding:2px 12px 6px; font-size:var(--font-ui-small); color:var(--text-error);";
+
+    // doLogin — defined after errorEl so it can reference it
     const doLogin = async () => {
       errorEl.style.display = "none";
       try {
@@ -132,114 +204,14 @@ export class TogetherSettingTab extends PluginSettingTab {
       }
     };
 
-    // Server dropdown (dev mode only)
-    if (isDevMode) {
-      let customSetting: Setting;
-      let customUrl = defaultDropdownValue === "custom" ? (saved?.serverUrl ?? "") : "";
-
-      new Setting(root)
-        .setName("Server")
-        .addDropdown(drop => {
-          drop.addOption(PROD_URL, "Production");
-          drop.addOption(LOCAL_URL, "Local (localhost:3001)");
-          drop.addOption("custom", "Custom…");
-          drop.setValue(defaultDropdownValue);
-          drop.onChange(v => {
-            if (v !== "custom") {
-              serverUrl = v;
-              customSetting.settingEl.style.display = "none";
-            } else {
-              serverUrl = customUrl;
-              customSetting.settingEl.style.display = "";
-            }
-          });
-        });
-
-      customSetting = new Setting(root)
-        .setName("Custom server URL")
-        .addText(t => {
-          t.setPlaceholder("https://…");
-          t.setValue(customUrl);
-          t.onChange(v => {
-            customUrl = v.trim();
-            serverUrl = customUrl;
-          });
-        });
-      customSetting.settingEl.style.display = defaultDropdownValue === "custom" ? "" : "none";
-    }
-
-    // Username
-    new Setting(root)
-      .setName("Username")
-      .addText(t => {
-        t.setValue(username);
-        t.onChange(v => { username = v.trim(); });
-      });
-
-    // Password with show/hide toggle
-    let passwordInputEl: HTMLInputElement;
-    let showPassword = false;
-    new Setting(root)
-      .setName("Password")
-      .addText(t => {
-        passwordInputEl = t.inputEl;
-        t.inputEl.type = "password";
-        t.onChange(v => { password = v; });
-        t.inputEl.addEventListener("keydown", (e: KeyboardEvent) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            doLogin();
-          }
-        });
-      })
-      .addExtraButton(btn =>
-        btn.setIcon("eye")
-          .setTooltip("Show/hide password")
-          .onClick(() => {
-            showPassword = !showPassword;
-            passwordInputEl.type = showPassword ? "text" : "password";
-          })
-      );
+    // Wire Enter key now that doLogin is defined
+    passwordInputEl.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Enter") { e.preventDefault(); doLogin(); }
+    });
 
     // Login button
-    new Setting(root)
-      .addButton(btn =>
-        btn.setButtonText("Log in").setCta().onClick(doLogin)
-      );
-
-    root.appendChild(errorEl);
-  }
-
-  // ── General section ───────────────────────────────────────────────────────────
-
-  private renderGeneralSection(root: HTMLElement): void {
-    new Setting(root)
-      .setName("Auto update plugins")
-      .addToggle(toggle => {
-        toggle.setValue(this.plugin.settings.autoUpdate ?? true);
-        toggle.onChange(async (v) => {
-          this.plugin.settings.autoUpdate = v;
-          await this.plugin.saveSettings();
-        });
-      });
-  }
-
-  // ── Danger section ────────────────────────────────────────────────────────────
-
-  private renderDangerSection(root: HTMLElement): void {
-    new Setting(root)
-      .addButton(btn =>
-        btn.setButtonText("Reinitialization").setWarning().onClick(async () => {
-          this.plugin.settings.accounts = [];
-          this.plugin.settings.activeAccountIndex = -1;
-          if (this.plugin.togetherAPI.auth.isLoggedIn) {
-            await this.plugin.togetherAPI.logout();
-          }
-          await this.plugin.saveSettings();
-          new Notice("Settings have been reset.");
-          this.display();
-        })
-      );
+    new Setting(card)
+      .addButton(btn => btn.setButtonText("Log in").setCta().onClick(doLogin));
   }
 
   // ── Developer section ─────────────────────────────────────────────────────────
