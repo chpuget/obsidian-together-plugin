@@ -329,9 +329,7 @@ export class PluginManager {
     const subDir = this._subPluginsDir();
     const bundlePath = this._bundlePath(id);
 
-    console.log(`[PluginManager] extractPluginZip ${id}: zip buffer size=${zipBuffer.byteLength}`);
     const unzipped = unzipSync(new Uint8Array(zipBuffer));
-    console.log(`[PluginManager] extractPluginZip ${id}: entries=[${Object.keys(unzipped).join(', ')}]`);
 
     // Check for main.js before cleaning old files
     if (!('main.js' in unzipped)) {
@@ -352,8 +350,6 @@ export class PluginManager {
       if (relativePath.endsWith('/')) continue;
       if (relativePath === 'main.js') {
         const content = strFromU8(data);
-        const firstBytes = Array.from(content.slice(0, 8)).map(c => c.charCodeAt(0).toString(16)).join(' ');
-        console.log(`[PluginManager] extractPluginZip ${id}: main.js length=${content.length}, first bytes=[${firstBytes}], preview=${JSON.stringify(content.slice(0, 120))}`);
         await adapter.write(bundlePath, content);
       } else if (relativePath.startsWith('assets/')) {
         const assetPath = normalizePath(`${subDir}/${id}/${relativePath}`);
