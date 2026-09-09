@@ -270,29 +270,27 @@ export class PluginManager {
     }
     if (!this._loadedPlugins.has('community')) {
       const bundlePath = this._resolvedBundlePath('community');
-      // Fallback: if bundle is still absent (e.g. server list fetch failed so tcInfo was null),
-      // attempt a blind re-download using auth credentials directly.
-      if (!(await this._bundleExists(bundlePath)) && auth.isLoggedIn && auth.serverUrl && auth.token) {
-        console.log(`[PluginManager] ensurePluginsLoaded community bundle missing — attempting blind re-download`);
-        try {
-          const downloadUrl = `${auth.serverUrl}/plugins/community/download${auth.branch === 'dev' ? '?branch=dev' : ''}`;
-          const r = await fetch(downloadUrl, { headers: { Authorization: `Bearer ${auth.token}` } });
-          if (r.ok) {
-            const zipBuffer = await r.arrayBuffer();
-            const dir = this._subPluginsDir();
-            const adapter = this.opts.app.vault.adapter;
-            if (!(await adapter.exists(dir))) await adapter.mkdir(dir);
-            const pluginDir = normalizePath(`${dir}/community`);
-            if (!(await adapter.exists(pluginDir))) await adapter.mkdir(pluginDir);
-            await this.extractPluginZip('community', zipBuffer);
-            console.log(`[PluginManager] ensurePluginsLoaded community blind re-download succeeded`);
-          } else {
-            console.error(`[PluginManager] ensurePluginsLoaded community blind re-download failed: HTTP ${r.status}`);
-            new Notice(`Community plugin unavailable: server returned HTTP ${r.status}. Try reloading.`);
+      // Fallback: bundle absent but tcInfo was null (list fetch may have failed at startup).
+      // Re-fetch the plugin list with a fresh auth token, then use the normal download path.
+      if (!(await this._bundleExists(bundlePath))) {
+        const freshAuth = this.opts.getAuth();
+        if (freshAuth.isLoggedIn && freshAuth.serverUrl && freshAuth.token) {
+          console.log(`[PluginManager] ensurePluginsLoaded community bundle missing — retrying plugin list fetch`);
+          try {
+            await this.refreshAvailablePlugins();
+            const retryInfo = this._availablePlugins.find(p => p.id === 'community');
+            if (retryInfo) {
+              console.log(`[PluginManager] ensurePluginsLoaded community retry: list fetched, downloading`);
+              await this.downloadPlugin(retryInfo);
+              console.log(`[PluginManager] ensurePluginsLoaded community retry download succeeded`);
+            } else {
+              console.error(`[PluginManager] ensurePluginsLoaded community not found in plugin list after retry`);
+              new Notice('Community plugin not found on server. Please contact support.');
+            }
+          } catch (e) {
+            console.error('[PluginManager] ensurePluginsLoaded community retry failed:', e);
+            new Notice(`Community plugin unavailable: ${(e as Error).message ?? e}. Check your connection.`);
           }
-        } catch (e) {
-          console.error('[PluginManager] ensurePluginsLoaded community blind re-download error:', e);
-          new Notice(`Community plugin unavailable: ${(e as Error).message ?? e}. Check your connection.`);
         }
       }
       if (await this._bundleExists(bundlePath)) {
