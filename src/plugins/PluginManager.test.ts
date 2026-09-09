@@ -3,8 +3,14 @@ import { PluginManager, parseVersion, resolveUpdateOrder } from './PluginManager
 import type { PluginInfo } from '../types';
 
 function makepm() {
+  const adapter = {
+    exists: vi.fn().mockResolvedValue(true),
+    read: vi.fn().mockResolvedValue(''),
+    write: vi.fn().mockResolvedValue(undefined),
+    list: vi.fn().mockResolvedValue({ files: [], folders: [] }),
+  };
   return new PluginManager({
-    app: {} as any,
+    app: { vault: { adapter } } as any,
     getSettings: () => ({ devMode: false, devRepoRoot: '' } as any),
     getAuth: () => ({ token: 'tok', serverUrl: 'http://localhost', username: 'alice', isLoggedIn: true } as any),
   });
