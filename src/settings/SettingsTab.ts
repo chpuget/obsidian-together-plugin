@@ -58,10 +58,8 @@ export class TogetherSettingTab extends PluginSettingTab {
       this.renderLoginForm(containerEl);
     }
 
-    if (this.plugin.settings.devMode) {
-      containerEl.createEl("hr");
-      this.renderDeveloperSection(containerEl);
-    }
+    containerEl.createEl("hr");
+    this.renderDeveloperSection(containerEl);
   }
 
   // ── Connected state ───────────────────────────────────────────────────────────
