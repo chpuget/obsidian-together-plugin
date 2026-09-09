@@ -1,4 +1,4 @@
-import { Plugin, Platform } from "obsidian";
+import { Plugin, Platform, Notice } from "obsidian";
 import EventEmitter from "eventemitter3";
 import type { TogetherAPI, TogetherSettings, SavedAccount } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
@@ -110,6 +110,20 @@ export default class ObsidianTogetherPlugin extends Plugin {
 
     // Expose on app.together
     this.app.together = this.togetherAPI;
+
+    // Block automatic file creation when clicking unresolved links.
+    // Obsidian's default openLinkText creates an empty file when the target doesn't
+    // exist; we intercept it and show a notice instead.
+    const _origOpenLinkText = this.app.workspace.openLinkText.bind(this.app.workspace);
+    this.app.workspace.openLinkText = (linktext, sourcePath, newLeaf?, openViewState?) => {
+      const dest = this.app.metadataCache.getFirstLinkpathDest(linktext, sourcePath ?? "");
+      if (!dest) {
+        new Notice(`File not found: "${linktext}"`);
+        return Promise.resolve();
+      }
+      return _origOpenLinkText(linktext, sourcePath, newLeaf, openViewState);
+    };
+    this.register(() => { this.app.workspace.openLinkText = _origOpenLinkText; });
 
     // Settings tab
     this.addSettingTab(new TogetherSettingTab(this.app, this));
