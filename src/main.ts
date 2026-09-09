@@ -87,6 +87,12 @@ export default class ObsidianTogetherPlugin extends Plugin {
         this.authManager.removeAccount(index);
         void this.saveSettings();
       },
+
+      clearStoredPassword: (): void => {
+        this.authManager.clearStoredPassword();
+        void this.saveSettings();
+      },
+
       pluginManager: undefined as any, // overridden via defineProperty below
     };
     Object.defineProperty(this.togetherAPI, "auth", {

@@ -151,6 +151,16 @@ export class AuthManager {
     this.state = { token: null, userId: null, username: null, serverUrl: null, isLoggedIn: false, isAdmin: false, branch: null };
   }
 
+  /** Clears the stored encrypted password for the active account.
+   *  Call after a successful password change to prevent stale silent re-login. */
+  clearStoredPassword(): void {
+    const settings = this.getSettings();
+    const idx = settings.activeAccountIndex;
+    if (idx >= 0 && settings.accounts[idx]) {
+      delete settings.accounts[idx].encryptedPassword;
+    }
+  }
+
   /** Remove a saved account entirely. */
   removeAccount(index: number): void {
     const settings = this.getSettings();

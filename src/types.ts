@@ -59,6 +59,9 @@ export interface TogetherAPI {
   switchToAccount(index: number): Promise<void>;
   /** Remove a saved account from the list. Adjusts activeAccountIndex. */
   removeAccount(index: number): void;
+  /** Clear the stored encrypted password for the active account.
+   *  Call after a successful password change. */
+  clearStoredPassword(): void;
   pluginManager?: PluginManagerAPI;
 }
 
