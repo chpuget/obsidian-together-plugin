@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -30,7 +30,7 @@ function run(cmd) {
   execSync(cmd, { cwd: ROOT, stdio: 'inherit' });
 }
 
-async function main() {
+function main() {
   const type = process.argv[2] ?? 'patch';
   if (!['patch', 'minor', 'major'].includes(type)) {
     console.error(`Usage: pnpm release [patch|minor|major]  (got: ${type})`);
@@ -74,12 +74,18 @@ async function main() {
   run('git add package.json manifest.json');
   run(`git commit -m "chore: bump to v${next}"`);
   run(`git tag v${next}`);
-  run('git push');
-  run('git push --tags');
+  try {
+    run('git push');
+    run('git push --tags');
+  } catch (err) {
+    console.error(`\nPush failed. Commit and tag v${next} exist locally.`);
+    console.error(`Fix the remote issue then run: git push && git push --tags`);
+    throw err;
+  }
 
   console.log(`\nReleased v${next} — GitHub Action will build and publish the assets.`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((err) => { console.error(err); process.exit(1); });
 }
