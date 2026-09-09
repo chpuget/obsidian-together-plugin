@@ -80,4 +80,6 @@ async function main() {
   console.log(`\nReleased v${next} — GitHub Action will build and publish the assets.`);
 }
 
-main().catch((err) => { console.error(err); process.exit(1); });
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((err) => { console.error(err); process.exit(1); });
+}
