@@ -253,8 +253,13 @@ export class PluginManager {
     const tcInfo = this._availablePlugins.find((p) => p.id === 'community');
     if (tcInfo) {
       const installed = this._installedVersions['community'];
-      if (!installed || installed !== tcInfo.version) {
-        console.log(`[PluginManager] ensurePluginsLoaded downloading community (installed: ${installed ?? 'none'}, available: ${tcInfo.version})`);
+      const bundlePath = this._resolvedBundlePath('community');
+      const bundleOnDisk = await this._bundleExists(bundlePath);
+      if (!installed || installed !== tcInfo.version || !bundleOnDisk) {
+        const reason = !bundleOnDisk && installed === tcInfo.version
+          ? 'bundle missing on disk'
+          : `installed: ${installed ?? 'none'}`;
+        console.log(`[PluginManager] ensurePluginsLoaded downloading community (${reason}, available: ${tcInfo.version})`);
         try {
           await this.downloadPlugin(tcInfo);
         } catch (e) {
@@ -265,12 +270,38 @@ export class PluginManager {
     }
     if (!this._loadedPlugins.has('community')) {
       const bundlePath = this._resolvedBundlePath('community');
+      // Fallback: if bundle is still absent (e.g. server list fetch failed so tcInfo was null),
+      // attempt a blind re-download using auth credentials directly.
+      if (!(await this._bundleExists(bundlePath)) && auth.isLoggedIn && auth.serverUrl && auth.token) {
+        console.log(`[PluginManager] ensurePluginsLoaded community bundle missing — attempting blind re-download`);
+        try {
+          const downloadUrl = `${auth.serverUrl}/plugins/community/download${auth.branch === 'dev' ? '?branch=dev' : ''}`;
+          const r = await fetch(downloadUrl, { headers: { Authorization: `Bearer ${auth.token}` } });
+          if (r.ok) {
+            const zipBuffer = await r.arrayBuffer();
+            const dir = this._subPluginsDir();
+            const adapter = this.opts.app.vault.adapter;
+            if (!(await adapter.exists(dir))) await adapter.mkdir(dir);
+            const pluginDir = normalizePath(`${dir}/community`);
+            if (!(await adapter.exists(pluginDir))) await adapter.mkdir(pluginDir);
+            await this.extractPluginZip('community', zipBuffer);
+            console.log(`[PluginManager] ensurePluginsLoaded community blind re-download succeeded`);
+          } else {
+            console.error(`[PluginManager] ensurePluginsLoaded community blind re-download failed: HTTP ${r.status}`);
+            new Notice(`Community plugin unavailable: server returned HTTP ${r.status}. Try reloading.`);
+          }
+        } catch (e) {
+          console.error('[PluginManager] ensurePluginsLoaded community blind re-download error:', e);
+          new Notice(`Community plugin unavailable: ${(e as Error).message ?? e}. Check your connection.`);
+        }
+      }
       if (await this._bundleExists(bundlePath)) {
         console.log(`[PluginManager] ensurePluginsLoaded loading community`);
         await this.loadPlugin('community');
         console.log(`[PluginManager] ensurePluginsLoaded community loaded`);
       } else {
         console.log(`[PluginManager] ensurePluginsLoaded community bundle not found on disk`);
+        new Notice('Community plugin could not be loaded. Please check your connection and reload.');
       }
     } else {
       console.log(`[PluginManager] ensurePluginsLoaded community already loaded`);
@@ -484,8 +515,13 @@ export class PluginManager {
       try {
         if (this.isOnline) {
           const installed = this._installedVersions[id];
-          if (!installed || installed !== info.version) {
-            console.log(`[PluginManager] syncEnabledPlugins downloading: ${id} (installed: ${installed ?? 'none'}, available: ${info.version})`);
+          const bundlePath = this._resolvedBundlePath(id);
+          const bundleOnDisk = await this._bundleExists(bundlePath);
+          if (!installed || installed !== info.version || !bundleOnDisk) {
+            const reason = !bundleOnDisk && installed === info.version
+              ? 'bundle missing on disk'
+              : `installed: ${installed ?? 'none'}`;
+            console.log(`[PluginManager] syncEnabledPlugins downloading: ${id} (${reason}, available: ${info.version})`);
             await this.downloadPlugin(info);
           }
         }
