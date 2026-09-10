@@ -66,7 +66,7 @@ describe('PluginManager path helpers', () => {
 });
 
 describe('PluginManager.loadPlugin', () => {
-  it('loadPlugin in devMode reads from vault adapter (not Node fs)', async () => {
+  it('loadPlugin resolves bundle via vault adapter at the expected path', async () => {
     const bundleCode = `module.exports = { default: class { async load() {} unload() {} } };`;
     const adapter = {
       exists: vi.fn().mockResolvedValue(true),

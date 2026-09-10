@@ -281,7 +281,6 @@ export class TogetherSettingTab extends PluginSettingTab {
           });
         });
 
-
       new Setting(card)
         .addButton(btn =>
           btn.setButtonText("Reload plugins").onClick(async () => {

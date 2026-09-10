@@ -217,7 +217,7 @@ export default class ObsidianTogetherPlugin extends Plugin {
           if (existing.isSymbolicLink() || existing.isFile()) {
             fs.unlinkSync(targetPath);
           } else {
-            fs.rmdirSync(targetPath, { recursive: true } as any);
+            fs.rmSync(targetPath, { recursive: true, force: true });
           }
         }
         fs.symlinkSync(appsPath, targetPath, 'dir');
