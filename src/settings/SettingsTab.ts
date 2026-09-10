@@ -1,4 +1,4 @@
-import { App, Notice, PluginSettingTab, Setting, setIcon } from "obsidian";
+import { App, Notice, Platform, PluginSettingTab, Setting, setIcon } from "obsidian";
 import type ObsidianTogetherPlugin from "../main";
 
 const LOCAL_URL = "http://localhost:3001";
@@ -58,8 +58,10 @@ export class TogetherSettingTab extends PluginSettingTab {
       this.renderLoginForm(containerEl);
     }
 
-    containerEl.createEl("hr");
-    this.renderDeveloperSection(containerEl);
+    if (Platform.isDesktop) {
+      containerEl.createEl("hr");
+      this.renderDeveloperSection(containerEl);
+    }
   }
 
   // ── Connected state ───────────────────────────────────────────────────────────
@@ -253,7 +255,7 @@ export class TogetherSettingTab extends PluginSettingTab {
           if (this.plugin.settings.devRepoRoot) {
             const result = this.plugin.manageDevSymlink(v);
             if (result.ok) {
-              new Notice(result.message + (v ? "\nRestart Obsidian to load plugin-core from repo." : ""));
+              new Notice(result.message);
             } else {
               new Notice(`Dev symlink: ${result.message}`, 5000);
             }
@@ -279,12 +281,6 @@ export class TogetherSettingTab extends PluginSettingTab {
           });
         });
 
-      const corePath = (this.plugin as any)._devPluginCorePath?.() ?? "(unknown)";
-      const fs = typeof require !== "undefined" ? (() => { try { return require("fs"); } catch { return null; } })() : null;
-      const coreExists = fs ? fs.existsSync(corePath) : false;
-      new Setting(card)
-        .setName("Plugin-core source")
-        .setDesc(`${corePath} ${coreExists ? "✓" : "✗ not found"}`);
 
       new Setting(card)
         .addButton(btn =>
