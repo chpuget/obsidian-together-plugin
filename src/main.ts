@@ -196,48 +196,37 @@ export default class ObsidianTogetherPlugin extends Plugin {
     localStorage.setItem(this._lsKey, JSON.stringify(this.settings));
   }
 
-  /** Returns the absolute path of the plugin-core main.js in the vault. */
-  private _vaultPluginMainPath(): string | null {
-    const adapter = this.app.vault.adapter as any;
-    const base: string = adapter.basePath ?? adapter.getBasePath?.() ?? '';
-    if (!base) return null;
-    const path = require('path') as typeof import('path');
-    return path.join(base, '.obsidian', 'plugins', 'obsidian-together', 'main.js');
-  }
-
-  /** Returns the expected plugin-core source main.js (sibling repo). */
-  private _devPluginCorePath(): string | null {
-    const { devRepoRoot } = this.settings;
-    if (!devRepoRoot) return null;
-    const path = require('path') as typeof import('path');
-    const parent = path.dirname(devRepoRoot);
-    return path.join(parent, 'obsidian-together-plugin', 'main.js');
-  }
-
-  /** Creates or removes the plugin-core symlink based on devMode state. */
+  /** Creates or removes the sub-plugins directory symlink based on devMode state. */
   manageDevSymlink(enable: boolean): { ok: boolean; message: string } {
-    if (Platform.isMobile) return { ok: false, message: 'Dev symlink: not supported on mobile' };
+    if (Platform.isMobile) return { ok: false, message: 'Not supported on mobile' };
     try {
       const fs = require('fs') as typeof import('fs');
-      const targetPath = this._vaultPluginMainPath();
-      if (!targetPath) return { ok: false, message: 'Could not determine vault path' };
+      const path = require('path') as typeof import('path');
+      const adapter = this.app.vault.adapter as any;
+      const base: string = adapter.basePath ?? adapter.getBasePath?.() ?? '';
+      if (!base) return { ok: false, message: 'Could not determine vault path' };
+      const targetPath = path.join(base, '.obsidian', 'plugins', 'obsidian-together', 'sub-plugins');
 
       if (enable) {
-        const sourcePath = this._devPluginCorePath();
-        if (!sourcePath) return { ok: false, message: 'Set repo root path first' };
-        if (!fs.existsSync(sourcePath)) return { ok: false, message: `Not found: ${sourcePath}` };
+        const { devRepoRoot } = this.settings;
+        if (!devRepoRoot) return { ok: false, message: 'Set repo root path first' };
+        const appsPath = path.join(devRepoRoot, 'apps');
+        if (!fs.existsSync(appsPath)) return { ok: false, message: `Not found: ${appsPath}` };
         const existing = fs.lstatSync(targetPath, { throwIfNoEntry: false } as any);
-        if (existing) fs.unlinkSync(targetPath);
-        fs.symlinkSync(sourcePath, targetPath);
-        return { ok: true, message: `Symlink created → ${sourcePath}` };
+        if (existing) {
+          if (existing.isSymbolicLink() || existing.isFile()) {
+            fs.unlinkSync(targetPath);
+          } else {
+            fs.rmdirSync(targetPath, { recursive: true } as any);
+          }
+        }
+        fs.symlinkSync(appsPath, targetPath, 'dir');
+        return { ok: true, message: `Symlink created → ${appsPath}` };
       } else {
         const stat = fs.lstatSync(targetPath, { throwIfNoEntry: false } as any);
-        if (stat?.isSymbolicLink()) {
-          const content = fs.readFileSync(targetPath, 'utf-8');
-          fs.unlinkSync(targetPath);
-          fs.writeFileSync(targetPath, content);
-        }
-        return { ok: true, message: 'Symlink removed, regular file restored' };
+        if (stat?.isSymbolicLink()) fs.unlinkSync(targetPath);
+        fs.mkdirSync(targetPath, { recursive: true });
+        return { ok: true, message: 'Symlink removed' };
       }
     } catch (e) {
       return { ok: false, message: (e as Error).message ?? String(e) };
