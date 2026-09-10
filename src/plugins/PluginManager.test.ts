@@ -65,6 +65,31 @@ describe('PluginManager path helpers', () => {
   });
 });
 
+describe('PluginManager.loadPlugin', () => {
+  it('loadPlugin in devMode reads from vault adapter (not Node fs)', async () => {
+    const bundleCode = `module.exports = { default: class { async load() {} unload() {} } };`;
+    const adapter = {
+      exists: vi.fn().mockResolvedValue(true),
+      read: vi.fn().mockResolvedValue(bundleCode),
+    };
+    const pm = new PluginManager({
+      app: { vault: { adapter } } as any,
+      getSettings: () => ({ devMode: true, devRepoRoot: '/repo' } as any),
+      getAuth: () => ({ token: 'tok', serverUrl: 'http://localhost', isLoggedIn: true } as any),
+    });
+    pm['_availablePlugins'] = [{ id: 'music-band', version: '1.0.0', name: 'Music Band', description: '', checksum: '', size: 0, previewChecksum: null, previewUrls: {} }] as any;
+
+    await pm.loadPlugin('music-band');
+
+    expect(adapter.exists).toHaveBeenCalledWith(
+      expect.stringContaining('sub-plugins/music-band/main.js')
+    );
+    expect(adapter.read).toHaveBeenCalledWith(
+      expect.stringContaining('sub-plugins/music-band/main.js')
+    );
+  });
+});
+
 describe('PluginManager.syncEnabledPlugins', () => {
   it('unloads a plugin that is loaded but absent from enabledPlugins', async () => {
     const pm = makepm();

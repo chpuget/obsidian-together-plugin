@@ -102,11 +102,6 @@ export class PluginManager {
   }
 
   getSubPluginAssetResourceUrl(pluginId: string, assetRelPath: string): string {
-    const settings = this.opts.getSettings();
-    if (settings.devMode && settings.devRepoRoot) {
-      const absPath = `${settings.devRepoRoot}/apps/${pluginId}/${assetRelPath}`.replace(/\\/g, '/');
-      return 'app://local/' + (absPath.startsWith('/') ? absPath.slice(1) : absPath);
-    }
     const vaultRelPath = normalizePath(`${this._subPluginsDir()}/${pluginId}/${assetRelPath}`);
     return (this.opts.app.vault.adapter as { getResourcePath(p: string): string }).getResourcePath(vaultRelPath);
   }
@@ -253,7 +248,7 @@ export class PluginManager {
     const tcInfo = this._availablePlugins.find((p) => p.id === 'community');
     if (tcInfo) {
       const installed = this._installedVersions['community'];
-      const bundlePath = this._resolvedBundlePath('community');
+      const bundlePath = this._bundlePath('community');
       const bundleOnDisk = await this._bundleExists(bundlePath);
       if (!installed || installed !== tcInfo.version || !bundleOnDisk) {
         const reason = !bundleOnDisk && installed === tcInfo.version
@@ -269,7 +264,7 @@ export class PluginManager {
       }
     }
     if (!this._loadedPlugins.has('community')) {
-      const bundlePath = this._resolvedBundlePath('community');
+      const bundlePath = this._bundlePath('community');
       // Fallback: bundle absent but tcInfo was null (list fetch may have failed at startup).
       // Re-fetch the plugin list with a fresh auth token, then use the normal download path.
       if (!(await this._bundleExists(bundlePath))) {
@@ -313,7 +308,7 @@ export class PluginManager {
       for (const id of enabledIds) {
         if (id === 'community') continue;
         if (this._loadedPlugins.has(id)) continue;
-        const bundlePath = this._resolvedBundlePath(id);
+        const bundlePath = this._bundlePath(id);
         if (await this._bundleExists(bundlePath)) {
           console.log(`[PluginManager] ensurePluginsLoaded loading optional plugin: ${id}`);
           try { await this.loadPlugin(id); console.log(`[PluginManager] ensurePluginsLoaded loaded: ${id}`); } catch (e) { console.error(`PluginManager: failed to load ${id}:`, e); }
@@ -393,20 +388,12 @@ export class PluginManager {
 
   async loadPlugin(id: string): Promise<void> {
     if (this._loadedPlugins.has(id)) return;
-    const bundlePath = this._resolvedBundlePath(id);
+    const bundlePath = this._bundlePath(id);
 
-    const settings = this.opts.getSettings();
-    let code: string;
-    if (settings.devMode) {
-      const fs = this._requireFs();
-      if (!fs.existsSync(bundlePath)) throw new Error(`Bundle not found: ${bundlePath}`);
-      code = fs.readFileSync(bundlePath, 'utf-8');
-    } else {
-      if (!(await this.opts.app.vault.adapter.exists(bundlePath))) {
-        throw new Error(`Bundle not found: ${bundlePath}`);
-      }
-      code = await this.opts.app.vault.adapter.read(bundlePath);
+    if (!(await this.opts.app.vault.adapter.exists(bundlePath))) {
+      throw new Error(`Bundle not found: ${bundlePath}`);
     }
+    const code = await this.opts.app.vault.adapter.read(bundlePath);
 
     const nodeRequire = typeof require !== 'undefined' ? require : null;
 
@@ -467,9 +454,8 @@ export class PluginManager {
   }
 
   async reloadAll(): Promise<void> {
-    const settings = this.opts.getSettings();
-    const idsToLoad = settings.devMode ? this._getDevPluginIds() : [...this._loadedPlugins.keys()];
-    for (const id of [...this._loadedPlugins.keys()]) await this.unloadPlugin(id);
+    const idsToLoad = [...this._loadedPlugins.keys()];
+    for (const id of idsToLoad) await this.unloadPlugin(id);
     for (const id of idsToLoad) {
       try { await this.loadPlugin(id); } catch (e) { console.error(`PluginManager: reloadAll failed to load ${id}:`, e); }
     }
@@ -513,7 +499,7 @@ export class PluginManager {
       try {
         if (this.isOnline) {
           const installed = this._installedVersions[id];
-          const bundlePath = this._resolvedBundlePath(id);
+          const bundlePath = this._bundlePath(id);
           const bundleOnDisk = await this._bundleExists(bundlePath);
           if (!installed || installed !== info.version || !bundleOnDisk) {
             const reason = !bundleOnDisk && installed === info.version
@@ -535,35 +521,12 @@ export class PluginManager {
 
   // ── Private helpers ───────────────────────────────────────────────────────────
 
-  /** Only used in devMode where absolute paths and Node fs are needed. */
-  private _requireFs(): any {
-    if (typeof require !== 'undefined') {
-      try {
-        const fs = require('fs');
-        if (fs && typeof fs.existsSync === 'function') return fs;
-      } catch { /* mobile */ }
-    }
-    return {
-      existsSync: () => false,
-      readFileSync: () => '',
-      writeFileSync: () => {},
-      mkdirSync: () => {},
-      readdirSync: () => [],
-    };
-  }
-
-  /** Check if a bundle exists — uses vault adapter for non-devMode, fs for devMode. */
+  /** Check if a bundle exists — uses vault adapter. */
   private async _bundleExists(bundlePath: string): Promise<boolean> {
-    const settings = this.opts.getSettings();
-    if (settings.devMode) return this._requireFs().existsSync(bundlePath);
     return this.opts.app.vault.adapter.exists(bundlePath);
   }
 
   private _subPluginsDir(): string {
-    const settings = this.opts.getSettings();
-    if (settings.devMode && settings.devRepoRoot) {
-      return settings.devRepoRoot + '/apps';
-    }
     // vault-relative path — works on both desktop and mobile via vault.adapter
     return '.obsidian/plugins/obsidian-together/sub-plugins';
   }
@@ -578,14 +541,6 @@ export class PluginManager {
 
   private _versionPath(id: string): string {
     return this._subPluginsDir() + `/${id}/main.version`;
-  }
-
-  private _resolvedBundlePath(id: string): string {
-    const settings = this.opts.getSettings();
-    if (settings.devMode && settings.devRepoRoot) {
-      return `${settings.devRepoRoot}/apps/${id}/main.js`;
-    }
-    return this._bundlePath(id);
   }
 
   private async _readEnabledPluginsFromVault(username: string): Promise<string[]> {
@@ -620,22 +575,6 @@ export class PluginManager {
         try { await adapter.remove(filePath); } catch { /* ignore */ }
       }
     }
-  }
-
-  private _getDevPluginIds(): string[] {
-    const settings = this.opts.getSettings();
-    if (!settings.devRepoRoot) return [];
-    const fs = this._requireFs();
-    const appsDir = `${settings.devRepoRoot}/apps`;
-    if (!fs.existsSync(appsDir)) return [];
-    return (fs.readdirSync(appsDir) as string[]).filter((id: string) => {
-      const mdPath = `${appsDir}/${id}/${id}.md`;
-      if (!fs.existsSync(mdPath)) return false;
-      try {
-        const content: string = fs.readFileSync(mdPath, 'utf-8');
-        return !/^roadmap:\s*true/m.test(content);
-      } catch { return false; }
-    });
   }
 
   private async _cleanupObsoletePlugins(serverIds: Set<string>, username: string): Promise<void> {
@@ -714,19 +653,23 @@ export class PluginManager {
   private async _loadInstalledVersions(): Promise<void> {
     const settings = this.opts.getSettings();
     if (settings.devMode) {
-      // In dev mode, read version.json from repo using Node fs
-      const fs = this._requireFs();
-      for (const id of this._getDevPluginIds()) {
-        const vp = `${settings.devRepoRoot}/apps/${id}/version.json`;
-        if (fs.existsSync(vp)) {
-          try {
-            const v = JSON.parse(fs.readFileSync(vp, 'utf-8'));
-            this._installedVersions[id] = `${v.major}.${v.minor}.${v.build}`;
-            if (v.buildDate) this._installedBuildDates[id] = v.buildDate;
-          } catch { /* ignore */ }
+      const dir = this._subPluginsDir();
+      const adapter = this.opts.app.vault.adapter;
+      if (await adapter.exists(dir)) {
+        const { folders } = await adapter.list(dir);
+        for (const folderPath of folders) {
+          const id = folderPath.split('/').pop()!;
+          if (!id) continue;
+          const vp = normalizePath(`${folderPath}/version.json`);
+          if (await adapter.exists(vp)) {
+            try {
+              const v = JSON.parse(await adapter.read(vp));
+              this._installedVersions[id] = `${v.major}.${v.minor}.${v.build}`;
+              if (v.buildDate) this._installedBuildDates[id] = v.buildDate;
+            } catch { /* ignore */ }
+          }
         }
       }
-      // Clean up stale flat-layout files from the vault even in devMode
       await this._migrateOldFlatFiles();
       return;
     }
