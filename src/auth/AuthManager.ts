@@ -7,6 +7,8 @@ type SafeStorage = {
 };
 
 function getSafeStorage(): SafeStorage | undefined {
+  // safeStorage is only available in Electron desktop — skip on mobile and mobile emulation.
+  if (typeof process === 'undefined' || !process.versions?.electron) return undefined;
   try {
     return (require('electron') as { safeStorage: SafeStorage }).safeStorage;
   } catch {
