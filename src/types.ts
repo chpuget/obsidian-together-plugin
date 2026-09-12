@@ -64,8 +64,9 @@ export interface TogetherAPI {
   /** Clear the stored encrypted password for the active account.
    *  Call after a successful password change. */
   clearStoredPassword(): void;
-  /** Create a logger bound to a plugin ID, respecting the current user's trace config. */
-  createLogger(pluginId: string): Logger;
+  /** Create a logger bound to a plugin ID, respecting the current user's trace config.
+   *  Optional so older versions of plugin-core don't break sub-plugins. */
+  createLogger?(pluginId: string): Logger;
   pluginManager?: PluginManagerAPI;
 }
 
