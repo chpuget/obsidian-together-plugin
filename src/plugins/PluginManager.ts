@@ -3,12 +3,14 @@ import { normalizePath, Notice, Platform } from 'obsidian';
 import { unzipSync, strFromU8 } from 'fflate';
 import type { TogetherSettings, AuthState, PluginInfo } from '../types';
 import { PreviewCache } from './PreviewCache';
+import type { Logger } from '../logger';
 
 export interface PluginManagerOptions {
   app: App;
   getSettings: () => TogetherSettings;
   getAuth: () => AuthState;
   onPluginLoaded?: (id: string, instance: unknown) => void;
+  logger: Logger;
 }
 
 export function parseVersion(v: string): { major: number; minor: number; build: number } | null {
@@ -60,8 +62,11 @@ export class PluginManager {
   private _loadingPromise: Promise<void> | null = null;
   private _previewCache: PreviewCache | null = null;
   isOnline = false;
+  private readonly logger: Logger;
 
-  constructor(private readonly opts: PluginManagerOptions) {}
+  constructor(private readonly opts: PluginManagerOptions) {
+    this.logger = opts.logger;
+  }
 
   // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -147,6 +152,7 @@ export class PluginManager {
         adapter,
         vaultBase,
         Platform.isMobile,
+        this.logger,
       );
     }
     return this._previewCache;
@@ -160,13 +166,13 @@ export class PluginManager {
     this.isOnline = true;
     const cache = this.getPreviewCache();
     const stale = plugins.filter(info => !cache.isCurrent(info.id, info.version, info.previewChecksum));
-    console.log(`[PluginManager] updateFromPluginList: ${plugins.length} plugins, ${stale.length} stale`);
+    this.logger.verbose(`[PluginManager] updateFromPluginList: ${plugins.length} plugins, ${stale.length} stale`);
     const refreshes = stale
       .map(info => cache.refresh(info.id, info.version, info.previewChecksum, info.previewUrls)
-        .catch((e) => console.warn(`PluginManager: preview refresh failed for ${info.id}:`, e)));
+        .catch((e) => this.logger.warn(`PluginManager: preview refresh failed for ${info.id}:`, e)));
     if (refreshes.length > 0) await Promise.allSettled(refreshes);
     await this._evictObsoletePreviews(new Set(plugins.map(p => p.id)));
-    console.log(`[PluginManager] updateFromPluginList: done`);
+    this.logger.verbose(`[PluginManager] updateFromPluginList: done`);
   }
 
   /** Lightweight refresh: re-fetches the available-plugins list from the server and
@@ -187,7 +193,7 @@ export class PluginManager {
         const refreshes = this._availablePlugins
           .filter(info => !cache.isCurrent(info.id, info.version, info.previewChecksum))
           .map(info => cache.refresh(info.id, info.version, info.previewChecksum, info.previewUrls)
-            .catch((e) => console.warn(`PluginManager: preview refresh failed for ${info.id}:`, e)));
+            .catch((e) => this.logger.warn(`PluginManager: preview refresh failed for ${info.id}:`, e)));
         if (refreshes.length > 0) await Promise.allSettled(refreshes);
         await this._evictObsoletePreviews(new Set(this._availablePlugins.map(p => p.id)));
       }
@@ -209,40 +215,40 @@ export class PluginManager {
   private async _ensurePluginsLoadedImpl(): Promise<void> {
     const { getAuth } = this.opts;
     const auth = getAuth();
-    console.log(`[PluginManager] ensurePluginsLoaded start — isLoggedIn: ${auth.isLoggedIn}, serverUrl: ${auth.serverUrl ?? 'none'}`);
+    this.logger.verbose(`[PluginManager] ensurePluginsLoaded start — isLoggedIn: ${auth.isLoggedIn}, serverUrl: ${auth.serverUrl ?? 'none'}`);
 
     // Only hit the server when fully authenticated
     if (auth.isLoggedIn && auth.serverUrl && auth.token) {
       try {
-        console.log(`[PluginManager] ensurePluginsLoaded fetching plugin list from server…`);
+        this.logger.verbose(`[PluginManager] ensurePluginsLoaded fetching plugin list from server…`);
         const r = await fetch(`${auth.serverUrl}/plugins${auth.branch === 'dev' ? '?branch=dev' : ''}`, {
           headers: { Authorization: `Bearer ${auth.token}` },
         });
         if (r.ok) {
           this._availablePlugins = await r.json() as PluginInfo[];
           this.isOnline = true;
-          console.log(`[PluginManager] ensurePluginsLoaded fetched ${this._availablePlugins.length} plugins, isOnline: true`);
+          this.logger.verbose(`[PluginManager] ensurePluginsLoaded fetched ${this._availablePlugins.length} plugins, isOnline: true`);
           const cache = this.getPreviewCache();
           const refreshes = this._availablePlugins
             .filter(info => !cache.isCurrent(info.id, info.version, info.previewChecksum))
             .map(info => cache.refresh(info.id, info.version, info.previewChecksum, info.previewUrls)
-              .catch((e) => console.warn(`PluginManager: preview refresh failed for ${info.id}:`, e)));
+              .catch((e) => this.logger.warn(`PluginManager: preview refresh failed for ${info.id}:`, e)));
           if (refreshes.length > 0) await Promise.allSettled(refreshes);
         } else {
           this.isOnline = false;
-          console.log(`[PluginManager] ensurePluginsLoaded server responded ${r.status}, isOnline: false`);
+          this.logger.verbose(`[PluginManager] ensurePluginsLoaded server responded ${r.status}, isOnline: false`);
         }
       } catch (e) {
         this.isOnline = false;
-        console.log(`[PluginManager] ensurePluginsLoaded server unreachable, isOnline: false`, e);
+        this.logger.verbose(`[PluginManager] ensurePluginsLoaded server unreachable, isOnline: false`, e);
       }
     } else {
-      console.log(`[PluginManager] ensurePluginsLoaded skipping server fetch (not authenticated)`);
+      this.logger.verbose(`[PluginManager] ensurePluginsLoaded skipping server fetch (not authenticated)`);
     }
 
     // Load installed versions from disk
     await this._loadInstalledVersions();
-    console.log(`[PluginManager] ensurePluginsLoaded installed versions: ${JSON.stringify(this._installedVersions)}`);
+    this.logger.verbose(`[PluginManager] ensurePluginsLoaded installed versions: ${JSON.stringify(this._installedVersions)}`);
 
     // community is always required
     const tcInfo = this._availablePlugins.find((p) => p.id === 'community');
@@ -254,11 +260,11 @@ export class PluginManager {
         const reason = !bundleOnDisk && installed === tcInfo.version
           ? 'bundle missing on disk'
           : `installed: ${installed ?? 'none'}`;
-        console.log(`[PluginManager] ensurePluginsLoaded downloading community (${reason}, available: ${tcInfo.version})`);
+        this.logger.verbose(`[PluginManager] ensurePluginsLoaded downloading community (${reason}, available: ${tcInfo.version})`);
         try {
           await this.downloadPlugin(tcInfo);
         } catch (e) {
-          console.error('[PluginManager] ensurePluginsLoaded failed to download community:', e);
+          this.logger.error('[PluginManager] ensurePluginsLoaded failed to download community:', e);
           new Notice(`Failed to download community: ${(e as Error).message ?? e}`);
         }
       }
@@ -270,54 +276,54 @@ export class PluginManager {
       if (!(await this._bundleExists(bundlePath))) {
         const freshAuth = this.opts.getAuth();
         if (freshAuth.isLoggedIn && freshAuth.serverUrl && freshAuth.token) {
-          console.log(`[PluginManager] ensurePluginsLoaded community bundle missing — retrying plugin list fetch`);
+          this.logger.verbose(`[PluginManager] ensurePluginsLoaded community bundle missing — retrying plugin list fetch`);
           try {
             await this.refreshAvailablePlugins();
             const retryInfo = this._availablePlugins.find(p => p.id === 'community');
             if (retryInfo) {
-              console.log(`[PluginManager] ensurePluginsLoaded community retry: list fetched, downloading`);
+              this.logger.verbose(`[PluginManager] ensurePluginsLoaded community retry: list fetched, downloading`);
               await this.downloadPlugin(retryInfo);
-              console.log(`[PluginManager] ensurePluginsLoaded community retry download succeeded`);
+              this.logger.verbose(`[PluginManager] ensurePluginsLoaded community retry download succeeded`);
             } else {
-              console.error(`[PluginManager] ensurePluginsLoaded community not found in plugin list after retry`);
+              this.logger.error(`[PluginManager] ensurePluginsLoaded community not found in plugin list after retry`);
               new Notice('Community plugin not found on server. Please contact support.');
             }
           } catch (e) {
-            console.error('[PluginManager] ensurePluginsLoaded community retry failed:', e);
+            this.logger.error('[PluginManager] ensurePluginsLoaded community retry failed:', e);
             new Notice(`Community plugin unavailable: ${(e as Error).message ?? e}. Check your connection.`);
           }
         }
       }
       if (await this._bundleExists(bundlePath)) {
-        console.log(`[PluginManager] ensurePluginsLoaded loading community`);
+        this.logger.verbose(`[PluginManager] ensurePluginsLoaded loading community`);
         await this.loadPlugin('community');
-        console.log(`[PluginManager] ensurePluginsLoaded community loaded`);
+        this.logger.verbose(`[PluginManager] ensurePluginsLoaded community loaded`);
       } else {
-        console.log(`[PluginManager] ensurePluginsLoaded community bundle not found on disk`);
+        this.logger.verbose(`[PluginManager] ensurePluginsLoaded community bundle not found on disk`);
         new Notice('Community plugin could not be loaded. Please check your connection and reload.');
       }
     } else {
-      console.log(`[PluginManager] ensurePluginsLoaded community already loaded`);
+      this.logger.verbose(`[PluginManager] ensurePluginsLoaded community already loaded`);
     }
 
     // Load optional plugins the user previously enabled
     const authState = this.opts.getAuth();
     if (authState.username) {
       const enabledIds = await this._readEnabledPluginsFromVault(authState.username);
-      console.log(`[PluginManager] ensurePluginsLoaded optional plugins for ${authState.username}: [${enabledIds.join(', ')}]`);
+      this.logger.verbose(`[PluginManager] ensurePluginsLoaded optional plugins for ${authState.username}: [${enabledIds.join(', ')}]`);
       for (const id of enabledIds) {
         if (id === 'community') continue;
         if (this._loadedPlugins.has(id)) continue;
         const bundlePath = this._bundlePath(id);
         if (await this._bundleExists(bundlePath)) {
-          console.log(`[PluginManager] ensurePluginsLoaded loading optional plugin: ${id}`);
-          try { await this.loadPlugin(id); console.log(`[PluginManager] ensurePluginsLoaded loaded: ${id}`); } catch (e) { console.error(`PluginManager: failed to load ${id}:`, e); }
+          this.logger.verbose(`[PluginManager] ensurePluginsLoaded loading optional plugin: ${id}`);
+          try { await this.loadPlugin(id); this.logger.verbose(`[PluginManager] ensurePluginsLoaded loaded: ${id}`); } catch (e) { this.logger.error(`PluginManager: failed to load ${id}:`, e); }
         } else {
-          console.log(`[PluginManager] ensurePluginsLoaded skip optional plugin (not on disk): ${id}`);
+          this.logger.verbose(`[PluginManager] ensurePluginsLoaded skip optional plugin (not on disk): ${id}`);
         }
       }
     }
-    console.log(`[PluginManager] ensurePluginsLoaded done`);
+    this.logger.verbose(`[PluginManager] ensurePluginsLoaded done`);
   }
 
   async downloadPlugin(info: PluginInfo): Promise<void> {
@@ -411,7 +417,7 @@ export class PluginManager {
     }
 
     const firstBytes = Array.from(code.slice(0, 8)).map(c => c.charCodeAt(0).toString(16)).join(' ');
-    console.log(`[PluginManager] loadPlugin ${id}: code length=${code.length}, first bytes=[${firstBytes}], preview=${JSON.stringify(code.slice(0, 120))}`);
+    this.logger.verbose(`[PluginManager] loadPlugin ${id}: code length=${code.length}, first bytes=[${firstBytes}], preview=${JSON.stringify(code.slice(0, 120))}`);
 
     const fakeModule: { exports: any } = { exports: {} };
     const subRequire = (m: string) => {
@@ -445,7 +451,7 @@ export class PluginManager {
   async unloadPlugin(id: string): Promise<void> {
     const instance = this._loadedPlugins.get(id);
     if (instance) {
-      try { instance.unload?.(); } catch (e) { console.error(`PluginManager: error unloading ${id}:`, e); }
+      try { instance.unload?.(); } catch (e) { this.logger.error(`PluginManager: error unloading ${id}:`, e); }
       this._loadedPlugins.delete(id);
     }
     if (typeof document !== 'undefined') {
@@ -457,13 +463,13 @@ export class PluginManager {
     const idsToLoad = [...this._loadedPlugins.keys()];
     for (const id of idsToLoad) await this.unloadPlugin(id);
     for (const id of idsToLoad) {
-      try { await this.loadPlugin(id); } catch (e) { console.error(`PluginManager: reloadAll failed to load ${id}:`, e); }
+      try { await this.loadPlugin(id); } catch (e) { this.logger.error(`PluginManager: reloadAll failed to load ${id}:`, e); }
     }
   }
 
   unloadAll(): void {
     for (const [id, instance] of this._loadedPlugins) {
-      try { instance.unload?.(); } catch (e) { console.error(`PluginManager: error unloading ${id}:`, e); }
+      try { instance.unload?.(); } catch (e) { this.logger.error(`PluginManager: error unloading ${id}:`, e); }
       if (typeof document !== 'undefined') {
         document.querySelector(`style[data-plugin-id="${id}"]`)?.remove();
       }
@@ -472,28 +478,28 @@ export class PluginManager {
   }
 
   async syncEnabledPlugins(username: string): Promise<void> {
-    console.log(`[PluginManager] syncEnabledPlugins start — user: ${username}`);
+    this.logger.verbose(`[PluginManager] syncEnabledPlugins start — user: ${username}`);
     const serverIds = new Set(this._availablePlugins.map(p => p.id));
     await this._cleanupObsoletePlugins(serverIds, username);
     const enabledInVault = await this._readEnabledPluginsFromVault(username);
-    console.log(`[PluginManager] syncEnabledPlugins vault enabled: [${enabledInVault.join(', ')}]`);
+    this.logger.verbose(`[PluginManager] syncEnabledPlugins vault enabled: [${enabledInVault.join(', ')}]`);
 
     const optionalLoaded = [...this._loadedPlugins.keys()].filter(id => id !== 'community');
     for (const id of optionalLoaded) {
       if (!enabledInVault.includes(id)) {
-        console.log(`[PluginManager] syncEnabledPlugins unloading removed plugin: ${id}`);
+        this.logger.verbose(`[PluginManager] syncEnabledPlugins unloading removed plugin: ${id}`);
         await this.unloadPlugin(id);
       }
     }
 
     for (const id of enabledInVault) {
       if (id === 'community') continue;
-      if (this._loadedPlugins.has(id)) { console.log(`[PluginManager] syncEnabledPlugins skip (already loaded): ${id}`); continue; }
+      if (this._loadedPlugins.has(id)) { this.logger.verbose(`[PluginManager] syncEnabledPlugins skip (already loaded): ${id}`); continue; }
       const info = this._availablePlugins.find(p => p.id === id);
-      if (!info) { console.log(`[PluginManager] syncEnabledPlugins skip (not in available list): ${id}`); continue; }
+      if (!info) { this.logger.verbose(`[PluginManager] syncEnabledPlugins skip (not in available list): ${id}`); continue; }
       const missingDeps = this.checkDependencies(id);
       if (missingDeps.length > 0) {
-        console.warn(`[PluginManager] syncEnabledPlugins: skipping ${id} — missing deps: ${missingDeps.map(d => d.id).join(', ')}`);
+        this.logger.warn(`[PluginManager] syncEnabledPlugins: skipping ${id} — missing deps: ${missingDeps.map(d => d.id).join(', ')}`);
         continue;
       }
       try {
@@ -505,18 +511,18 @@ export class PluginManager {
             const reason = !bundleOnDisk && installed === info.version
               ? 'bundle missing on disk'
               : `installed: ${installed ?? 'none'}`;
-            console.log(`[PluginManager] syncEnabledPlugins downloading: ${id} (${reason}, available: ${info.version})`);
+            this.logger.verbose(`[PluginManager] syncEnabledPlugins downloading: ${id} (${reason}, available: ${info.version})`);
             await this.downloadPlugin(info);
           }
         }
-        console.log(`[PluginManager] syncEnabledPlugins loading: ${id}`);
+        this.logger.verbose(`[PluginManager] syncEnabledPlugins loading: ${id}`);
         await this.loadPlugin(id);
-        console.log(`[PluginManager] syncEnabledPlugins loaded: ${id}`);
+        this.logger.verbose(`[PluginManager] syncEnabledPlugins loaded: ${id}`);
       } catch (e) {
-        console.error(`PluginManager: failed to sync plugin ${id}:`, e);
+        this.logger.error(`PluginManager: failed to sync plugin ${id}:`, e);
       }
     }
-    console.log(`[PluginManager] syncEnabledPlugins done`);
+    this.logger.verbose(`[PluginManager] syncEnabledPlugins done`);
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────────
@@ -591,9 +597,9 @@ export class PluginManager {
         for (const folderPath of folders) {
           const id = folderPath.split('/').pop()!;
           if (!id || serverIds.has(id)) continue;
-          console.log(`[PluginManager] cleanupObsoletePlugins removing sub-plugin: ${id}`);
+          this.logger.verbose(`[PluginManager] cleanupObsoletePlugins removing sub-plugin: ${id}`);
           await this.unloadPlugin(id);
-          try { await (adapter as any).rmdir(folderPath, true); } catch (e) { console.warn(`[PluginManager] cleanup failed to delete ${id}:`, e); }
+          try { await (adapter as any).rmdir(folderPath, true); } catch (e) { this.logger.warn(`[PluginManager] cleanup failed to delete ${id}:`, e); }
           delete this._installedVersions[id];
           await this._removeFromEnabledPlugins(username, id);
         }
@@ -614,8 +620,8 @@ export class PluginManager {
     for (const folderPath of folders) {
       const id = folderPath.split('/').pop()!;
       if (!id || serverIds.has(id)) continue;
-      console.log(`[PluginManager] evictObsoletePreviews: removing stale preview ${id}`);
-      try { await this.getPreviewCache().evict(id); } catch (e) { console.warn(`[PluginManager] evictObsoletePreviews failed for ${id}:`, e); }
+      this.logger.verbose(`[PluginManager] evictObsoletePreviews: removing stale preview ${id}`);
+      try { await this.getPreviewCache().evict(id); } catch (e) { this.logger.warn(`[PluginManager] evictObsoletePreviews failed for ${id}:`, e); }
     }
   }
 
@@ -646,7 +652,7 @@ export class PluginManager {
       const newContent = content.replace(/^---\n[\s\S]*?\n---/, `---\n${newFm}\n---`);
       await adapter.write(userFilePath, newContent);
     } catch (e) {
-      console.warn(`[PluginManager] _removeFromEnabledPlugins failed for ${username}/${id}:`, e);
+      this.logger.warn(`[PluginManager] _removeFromEnabledPlugins failed for ${username}/${id}:`, e);
     }
   }
 

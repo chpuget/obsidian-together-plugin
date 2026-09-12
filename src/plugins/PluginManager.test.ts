@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { PluginManager, parseVersion, resolveUpdateOrder } from './PluginManager';
 import type { PluginInfo } from '../types';
 
+const noopLogger = { verbose: () => {}, info: () => {}, warn: () => {}, error: () => {} } as any;
+
 function makepm() {
   const adapter = {
     exists: vi.fn().mockResolvedValue(true),
@@ -13,6 +15,7 @@ function makepm() {
     app: { vault: { adapter } } as any,
     getSettings: () => ({ devMode: false, devRepoRoot: '' } as any),
     getAuth: () => ({ token: 'tok', serverUrl: 'http://localhost', username: 'alice', isLoggedIn: true } as any),
+    logger: noopLogger,
   });
 }
 
@@ -28,14 +31,14 @@ describe('parseVersion', () => {
 
 describe('PluginManager.hasUpdate', () => {
   it('returns true when installed version differs from available', () => {
-    const pm = new PluginManager({ app: {} as any, getSettings: () => ({ devMode: false, devRepoRoot: '' } as any), getAuth: () => ({ token: 'tok', serverUrl: 'http://localhost', isLoggedIn: true } as any) });
+    const pm = new PluginManager({ app: {} as any, getSettings: () => ({ devMode: false, devRepoRoot: '' } as any), getAuth: () => ({ token: 'tok', serverUrl: 'http://localhost', isLoggedIn: true } as any), logger: noopLogger });
     pm['_availablePlugins'] = [{ id: 'games', version: '1.0.5', name: 'Games', description: '', checksum: '', size: 0, previewChecksum: null, previewUrls: {} }];
     pm['_installedVersions'] = { 'games': '1.0.4' };
     expect(pm.hasUpdate('games')).toBe(true);
   });
 
   it('returns false when versions match', () => {
-    const pm = new PluginManager({ app: {} as any, getSettings: () => ({ devMode: false, devRepoRoot: '' } as any), getAuth: () => ({ token: 'tok', serverUrl: 'http://localhost', isLoggedIn: true } as any) });
+    const pm = new PluginManager({ app: {} as any, getSettings: () => ({ devMode: false, devRepoRoot: '' } as any), getAuth: () => ({ token: 'tok', serverUrl: 'http://localhost', isLoggedIn: true } as any), logger: noopLogger });
     pm['_availablePlugins'] = [{ id: 'games', version: '1.0.5', name: 'Games', description: '', checksum: '', size: 0, previewChecksum: null, previewUrls: {} }];
     pm['_installedVersions'] = { 'games': '1.0.5' };
     expect(pm.hasUpdate('games')).toBe(false);
@@ -76,6 +79,7 @@ describe('PluginManager.loadPlugin', () => {
       app: { vault: { adapter } } as any,
       getSettings: () => ({ devMode: true, devRepoRoot: '/repo' } as any),
       getAuth: () => ({ token: 'tok', serverUrl: 'http://localhost', isLoggedIn: true } as any),
+      logger: noopLogger,
     });
     pm['_availablePlugins'] = [{ id: 'music-band', version: '1.0.0', name: 'Music Band', description: '', checksum: '', size: 0, previewChecksum: null, previewUrls: {} }] as any;
 
@@ -198,6 +202,7 @@ describe('PluginManager.syncEnabledPlugins', () => {
       app: { vault: { adapter } } as any,
       getSettings: () => ({ devMode: false } as any),
       getAuth: () => ({ username: 'alice', token: 'tok', serverUrl: 'http://localhost', isLoggedIn: true } as any),
+      logger: noopLogger,
     });
     pm['_availablePlugins'] = [
       { id: 'community', version: '1.0.0', name: 'Community', description: '', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
@@ -234,6 +239,7 @@ describe('PluginManager.syncEnabledPlugins', () => {
       app: { vault: { adapter } } as any,
       getSettings: () => ({ devMode: false } as any),
       getAuth: () => ({ username: 'alice', token: 'tok', serverUrl: 'http://localhost', isLoggedIn: true } as any),
+      logger: noopLogger,
     });
     pm['_availablePlugins'] = [
       { id: 'community', version: '1.0.0', name: 'Community', description: '', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
@@ -268,6 +274,7 @@ describe('PluginManager.syncEnabledPlugins', () => {
       app: { vault: { adapter } } as any,
       getSettings: () => ({ devMode: false } as any),
       getAuth: () => ({ username: 'alice', token: 'tok', serverUrl: 'http://localhost', isLoggedIn: true } as any),
+      logger: noopLogger,
     });
     pm['_availablePlugins'] = [];
     pm['_readEnabledPluginsFromVault'] = vi.fn().mockResolvedValue([]);
@@ -290,6 +297,7 @@ describe('PluginManager.syncEnabledPlugins', () => {
       app: { vault: { adapter } } as any,
       getSettings: () => ({ devMode: true } as any),
       getAuth: () => ({ username: 'alice', token: 'tok', serverUrl: 'http://localhost', isLoggedIn: true } as any),
+      logger: noopLogger,
     });
     pm['_availablePlugins'] = [
       { id: 'community', version: '1.0.0', name: 'Community', description: '', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
@@ -311,6 +319,7 @@ describe('PluginManager._migrateOldFlatFiles', () => {
       app: { vault: { adapter } } as any,
       getSettings: () => ({ devMode: false, devRepoRoot: '' } as any),
       getAuth: () => ({ token: 'tok', serverUrl: 'http://localhost', username: 'alice', isLoggedIn: true } as any),
+      logger: noopLogger,
     });
     return pm;
   }
@@ -596,6 +605,7 @@ describe('PluginManager._removeFromEnabledPlugins', () => {
       app: { vault: { adapter } } as any,
       getSettings: () => ({ devMode: false } as any),
       getAuth: () => ({ username: 'alice', token: 'tok', serverUrl: 'http://localhost', isLoggedIn: true } as any),
+      logger: noopLogger,
     });
   }
 
@@ -653,7 +663,7 @@ describe('PluginManager._removeFromEnabledPlugins', () => {
 
   it('does not throw when write fails', async () => {
     const vaultContent = '---\nenabledPlugins:\n  - together-community\n---\n';
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(noopLogger, 'warn');
     const adapter = {
       exists: vi.fn().mockResolvedValue(true),
       read: vi.fn().mockResolvedValue(vaultContent),

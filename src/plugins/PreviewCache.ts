@@ -1,3 +1,5 @@
+import type { Logger } from '../logger';
+
 export interface ParsedPreviewMeta {
   name?: string;
   description?: string;
@@ -19,6 +21,7 @@ export class PreviewCache {
   private readonly _bodyCache = new Map<string, string>();
   /** Mobile-only: tracks which files were actually written to the vault this session. */
   private readonly _imageCache = new Set<string>();
+  private readonly _logger?: Logger;
 
   constructor(
     private readonly _basePath: string | null,
@@ -26,8 +29,10 @@ export class PreviewCache {
     private readonly _adapter?: any,
     private readonly _vaultBase?: string,
     isMobile = false,
+    logger?: Logger,
   ) {
     this._available = !!(_basePath || (_adapter && _vaultBase));
+    this._logger = logger;
     if (isMobile) {
       // Obsidian mobile intercepts require('fs') before any try-catch can run — skip entirely.
       this._fs = null;
@@ -36,7 +41,7 @@ export class PreviewCache {
       this._fs = _basePath ? (fs ?? PreviewCache._requireFs()) : PreviewCache._requireFs();
       this._hasFsAccess = PreviewCache._checkFsIsReal(this._fs);
     }
-    console.log(`[PreviewCache] init: basePath=${!!_basePath} adapter=${!!_adapter} hasFsAccess=${this._hasFsAccess}`);
+    this._logger?.verbose(`[PreviewCache] init: basePath=${!!_basePath} adapter=${!!_adapter} hasFsAccess=${this._hasFsAccess}`);
   }
 
   private static _requireFs(): any {
@@ -80,7 +85,7 @@ export class PreviewCache {
     // instead we check whether Node fs can actually stat real paths.
     if (!this._hasFsAccess && this._vaultBase) {
       const refreshed = this._imageCache.has(`${pluginId}/__refreshed`);
-      if (!refreshed) console.log(`[PreviewCache] isCurrent(${pluginId}): stale — not refreshed this session`);
+      if (!refreshed) this._logger?.verbose(`[PreviewCache] isCurrent(${pluginId}): stale — not refreshed this session`);
       return refreshed;
     }
     return true;
@@ -110,21 +115,21 @@ export class PreviewCache {
     const adapter = this._adapter;
     const baseDir = this._vaultBase!;
     const dir = `${baseDir}/${pluginId}`;
-    console.log(`[PreviewCache] refresh ${pluginId}: jpg=${!!urls.jpg} cover=${!!urls.coverJpg} md=${!!urls.md}`);
+    this._logger?.verbose(`[PreviewCache] refresh ${pluginId}: jpg=${!!urls.jpg} cover=${!!urls.coverJpg} md=${!!urls.md}`);
 
     if (!(await adapter.exists(baseDir))) await adapter.mkdir(baseDir);
     if (!(await adapter.exists(dir))) await adapter.mkdir(dir);
 
     if (urls.jpg) {
       const ab = await this._downloadBinary(urls.jpg);
-      console.log(`[PreviewCache] jpg ${pluginId}: ${ab ? ab.byteLength + 'b' : 'FAILED'}`);
+      this._logger?.verbose(`[PreviewCache] jpg ${pluginId}: ${ab ? ab.byteLength + 'b' : 'FAILED'}`);
       if (ab) {
         try {
           await adapter.writeBinary(`${dir}/${pluginId}.jpg`, ab);
           this._imageCache.add(`${pluginId}/${pluginId}.jpg`);
-          console.log(`[PreviewCache] jpg ${pluginId}: written ok`);
+          this._logger?.verbose(`[PreviewCache] jpg ${pluginId}: written ok`);
         } catch (e) {
-          console.error(`[PreviewCache] jpg ${pluginId}: write failed`, e);
+          this._logger?.error(`[PreviewCache] jpg ${pluginId}: write failed`, e);
         }
       }
     }
@@ -135,7 +140,7 @@ export class PreviewCache {
           await adapter.writeBinary(`${dir}/${pluginId}.cover.jpg`, ab);
           this._imageCache.add(`${pluginId}/${pluginId}.cover.jpg`);
         } catch (e) {
-          console.error(`[PreviewCache] cover ${pluginId}: write failed`, e);
+          this._logger?.error(`[PreviewCache] cover ${pluginId}: write failed`, e);
         }
       }
     }
@@ -147,7 +152,7 @@ export class PreviewCache {
       const meta = parseFrontmatter(mdContent);
       if (meta) this._metaCache.set(pluginId, meta);
       this._bodyCache.set(pluginId, mdContent.replace(/^---\n[\s\S]*?\n---\n?/, '').trim());
-      console.log(`[PreviewCache] md ${pluginId}: meta=${!!meta}`);
+      this._logger?.verbose(`[PreviewCache] md ${pluginId}: meta=${!!meta}`);
     }
     // Mark this plugin as fully refreshed this session so isCurrent() can trust it
     this._imageCache.add(`${pluginId}/__refreshed`);
@@ -186,12 +191,12 @@ export class PreviewCache {
     try {
       const r = await fetch(url);
       if (!r.ok) {
-        console.warn(`PreviewCache: HTTP ${r.status} for ${url}`);
+        this._logger?.warn(`PreviewCache: HTTP ${r.status} for ${url}`);
         return null;
       }
       return r.arrayBuffer();
     } catch (e) {
-      console.warn(`PreviewCache: failed to fetch ${url}:`, e);
+      this._logger?.warn(`PreviewCache: failed to fetch ${url}:`, e);
       return null;
     }
   }
@@ -254,7 +259,7 @@ export class PreviewCache {
       try {
         if (await this._adapter.exists(dir)) await (this._adapter as any).rmdir(dir, true);
       } catch (e) {
-        console.warn(`[PreviewCache] evict ${pluginId}: adapter rmdir failed`, e);
+        this._logger?.warn(`[PreviewCache] evict ${pluginId}: adapter rmdir failed`, e);
       }
     }
     if (this._basePath && this._hasFsAccess) {
@@ -262,7 +267,7 @@ export class PreviewCache {
       try {
         if (this._fs.existsSync(dir)) this._fs.rmSync(dir, { recursive: true, force: true });
       } catch (e) {
-        console.warn(`[PreviewCache] evict ${pluginId}: fs rmSync failed`, e);
+        this._logger?.warn(`[PreviewCache] evict ${pluginId}: fs rmSync failed`, e);
       }
     }
     this._metaCache.delete(pluginId);

@@ -1,4 +1,6 @@
 import { EventEmitter } from "eventemitter3";
+import type { Logger, TraceLevel } from "./logger";
+export type { Logger, TraceLevel };
 
 export interface PluginInfo {
   id: string;
@@ -62,6 +64,8 @@ export interface TogetherAPI {
   /** Clear the stored encrypted password for the active account.
    *  Call after a successful password change. */
   clearStoredPassword(): void;
+  /** Create a logger bound to a plugin ID, respecting the current user's trace config. */
+  createLogger(pluginId: string): Logger;
   pluginManager?: PluginManagerAPI;
 }
 

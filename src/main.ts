@@ -1,7 +1,8 @@
 import { Plugin, Platform, Notice } from "obsidian";
 import EventEmitter from "eventemitter3";
-import type { TogetherAPI, TogetherSettings, SavedAccount } from "./types";
+import type { TogetherAPI, TogetherSettings, SavedAccount, TraceLevel } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
+import { Logger } from "./logger";
 import { AuthManager } from "./auth/AuthManager";
 import { PluginManager } from "./plugins/PluginManager";
 import { TogetherSettingTab } from "./settings/SettingsTab";
@@ -18,15 +19,19 @@ export default class ObsidianTogetherPlugin extends Plugin {
   settings!: TogetherSettings;
   authManager!: AuthManager;
   pluginManager!: PluginManager;
+  logger!: Logger;
 
   /** Shared API surface exposed on app.together for all ecosystem plugins. */
   togetherAPI!: TogetherAPI;
 
   private eventBus = new EventEmitter();
   private registeredExtensions = new Map<string, unknown>();
+  private traceConfig = new Map<string, TraceLevel>();
 
   async onload(): Promise<void> {
     await this.loadSettings();
+
+    this.logger = new Logger("obsidian-together", () => this.getTraceLevel("obsidian-together"));
 
     this.authManager = new AuthManager(() => this.settings);
 
@@ -35,6 +40,7 @@ export default class ObsidianTogetherPlugin extends Plugin {
       getSettings: () => this.settings,
       getAuth: () => this.authManager.getState(),
       onPluginLoaded: (id, instance) => this.registerExtension(id, instance),
+      logger: this.logger,
     });
 
     // Restore session from saved accounts
@@ -93,6 +99,9 @@ export default class ObsidianTogetherPlugin extends Plugin {
         void this.saveSettings();
       },
 
+      createLogger: (pluginId: string) =>
+        new Logger(pluginId, () => this.getTraceLevel(pluginId)),
+
       pluginManager: undefined as any, // overridden via defineProperty below
     };
     Object.defineProperty(this.togetherAPI, "auth", {
@@ -133,13 +142,14 @@ export default class ObsidianTogetherPlugin extends Plugin {
       // TODO: open Together panel
     });
 
-    // Listen for login to trigger plugin loading
+    // Listen for login to trigger plugin loading and refresh trace config
     this.eventBus.on('together:account-switched', async ({ username }: { username: string | null }) => {
+      if (this.app.workspace.layoutReady) this.loadTraceConfig();
       if (username) {
         try {
           await this.pluginManager.ensurePluginsLoaded();
           this.eventBus.emit('community:plugins-refreshed');
-        } catch (e) { console.error('PluginManager.ensurePluginsLoaded failed:', e); }
+        } catch (e) { this.logger.error('PluginManager.ensurePluginsLoaded failed:', e); }
       }
     });
 
@@ -147,9 +157,20 @@ export default class ObsidianTogetherPlugin extends Plugin {
     // (community must always run so it can display the login screen).
     void this.pluginManager.ensurePluginsLoaded()
       .then(() => this.eventBus.emit('community:plugins-refreshed'))
-      .catch((e) => console.error('PluginManager startup load failed:', e));
+      .catch((e) => this.logger.error('PluginManager startup load failed:', e));
 
-    console.log("Obsidian Together: loaded (v" + this.manifest.version + ")");
+    // Load trace config once vault is ready, then watch for user note changes
+    this.app.workspace.onLayoutReady(() => {
+      this.loadTraceConfig();
+      this.registerEvent(
+        this.app.metadataCache.on("changed", (file) => {
+          const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+          if (fm?.type === "user") this.loadTraceConfig();
+        })
+      );
+    });
+
+    this.logger.info("loaded (v" + this.manifest.version + ")");
   }
 
   onunload(): void {
@@ -158,7 +179,41 @@ export default class ObsidianTogetherPlugin extends Plugin {
       delete this.app.together;
     }
     this.eventBus.removeAllListeners();
-    console.log("Obsidian Together: unloaded");
+    this.logger.info("unloaded");
+  }
+
+  // ── Trace config ──────────────────────────────────────────────────────────────
+
+  private loadTraceConfig(): void {
+    const username = this.authManager.getState().username?.toLowerCase();
+    this.traceConfig.clear();
+    if (!username) return;
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      if (fm?.type !== "user") continue;
+      const id = (typeof fm.identifier === "string" ? fm.identifier : file.basename).toLowerCase();
+      if (id !== username) continue;
+      this.parseTraceConfig(fm.trace);
+      return;
+    }
+  }
+
+  private parseTraceConfig(trace: unknown): void {
+    if (!Array.isArray(trace)) return;
+    for (const entry of trace) {
+      const str = String(entry).trim();
+      const colon = str.lastIndexOf(":");
+      if (colon < 1) continue;
+      const pluginId = str.slice(0, colon).trim();
+      const level = str.slice(colon + 1).trim() as TraceLevel;
+      if (level === "error" || level === "info" || level === "verbose") {
+        this.traceConfig.set(pluginId, level);
+      }
+    }
+  }
+
+  private getTraceLevel(pluginId: string): TraceLevel {
+    return this.traceConfig.get(pluginId) ?? this.traceConfig.get("all") ?? "error";
   }
 
   // ── Settings ──────────────────────────────────────────────────────────────────
