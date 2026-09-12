@@ -201,6 +201,16 @@ export default class ObsidianTogetherPlugin extends Plugin {
   private parseTraceConfig(trace: unknown): void {
     if (!Array.isArray(trace)) return;
     for (const entry of trace) {
+      // YAML `- all: info` produces an object; `- "all: info"` produces a string
+      if (entry !== null && typeof entry === "object") {
+        for (const [pluginId, level] of Object.entries(entry as Record<string, unknown>)) {
+          const lvl = String(level).trim() as TraceLevel;
+          if (lvl === "error" || lvl === "info" || lvl === "verbose") {
+            this.traceConfig.set(pluginId.trim(), lvl);
+          }
+        }
+        continue;
+      }
       const str = String(entry).trim();
       const colon = str.lastIndexOf(":");
       if (colon < 1) continue;
