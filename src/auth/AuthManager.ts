@@ -1,3 +1,4 @@
+import { Platform } from "obsidian";
 import type { AuthState, SavedAccount, TogetherSettings } from "../types";
 
 type SafeStorage = {
@@ -8,7 +9,7 @@ type SafeStorage = {
 
 function getSafeStorage(): SafeStorage | undefined {
   // safeStorage is only available in Electron desktop — skip on mobile and mobile emulation.
-  if (typeof process === 'undefined' || !process.versions?.electron) return undefined;
+  if (Platform.isMobile || typeof process === 'undefined' || !process.versions?.electron) return undefined;
   try {
     return (require('electron') as { safeStorage: SafeStorage }).safeStorage;
   } catch {
