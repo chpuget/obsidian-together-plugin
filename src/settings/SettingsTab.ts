@@ -177,7 +177,9 @@ export class TogetherSettingTab extends PluginSettingTab {
         t.onChange(v => { username = v.trim(); });
       });
 
-    // Password — eye button injected inside the input
+    // Password — flex row: [input | eye-button] so the button never overlaps
+    // the input on mobile (absolute positioning inside Obsidian's flex
+    // .setting-item-control causes the button to intercept taps on phones).
     let passwordInputEl!: HTMLInputElement;
     let showPassword = false;
     new Setting(card)
@@ -188,22 +190,17 @@ export class TogetherSettingTab extends PluginSettingTab {
         t.onChange(v => { password = v; });
       });
 
-    // Wrap input in a relative container so the eye button is scoped to the
-    // input's bounds on all screen sizes (mobile flex layouts break absolute
-    // positioning relative to the wider .setting-item-control).
     const inputParent = passwordInputEl.parentNode!;
-    const wrapper = document.createElement("div");
-    wrapper.style.cssText = "position:relative;display:block;width:100%;";
-    inputParent.insertBefore(wrapper, passwordInputEl);
-    wrapper.appendChild(passwordInputEl);
-    passwordInputEl.style.paddingRight = "2em";
-    passwordInputEl.style.width = "100%";
-    passwordInputEl.style.boxSizing = "border-box";
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;align-items:center;width:100%;gap:4px;";
+    inputParent.insertBefore(row, passwordInputEl);
+    passwordInputEl.style.cssText = "flex:1;min-width:0;";
+    row.appendChild(passwordInputEl);
 
     const eye = document.createElement("button");
     eye.type = "button";
     eye.setAttribute("aria-label", "Toggle password visibility");
-    eye.style.cssText = "position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:4px;line-height:1;color:var(--text-muted);";
+    eye.style.cssText = "flex-shrink:0;background:none;border:none;cursor:pointer;padding:4px;line-height:1;color:var(--text-muted);";
     setIcon(eye, "eye");
     eye.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -211,7 +208,7 @@ export class TogetherSettingTab extends PluginSettingTab {
       passwordInputEl.type = showPassword ? "text" : "password";
       setIcon(eye, showPassword ? "eye-off" : "eye");
     });
-    wrapper.appendChild(eye);
+    row.appendChild(eye);
 
     // Error element
     const errorEl = card.createEl("p");
