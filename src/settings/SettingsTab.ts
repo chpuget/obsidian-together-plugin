@@ -180,30 +180,38 @@ export class TogetherSettingTab extends PluginSettingTab {
     // Password — eye button injected inside the input
     let passwordInputEl!: HTMLInputElement;
     let showPassword = false;
-    const pwdSetting = new Setting(card)
+    new Setting(card)
       .setName("Password")
       .addText(t => {
         passwordInputEl = t.inputEl;
         t.inputEl.type = "password";
-        t.inputEl.style.paddingRight = "30px";
         t.onChange(v => { password = v; });
       });
 
-    const ctrl = pwdSetting.settingEl.querySelector<HTMLElement>(".setting-item-control");
-    if (ctrl) {
-      ctrl.style.position = "relative";
-      const eye = document.createElement("button");
-      eye.type = "button";
-      eye.setAttribute("aria-label", "Toggle password visibility");
-      eye.style.cssText = "position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:2px;line-height:1;color:var(--text-muted);";
-      setIcon(eye, "eye");
-      eye.addEventListener("click", () => {
-        showPassword = !showPassword;
-        passwordInputEl.type = showPassword ? "text" : "password";
-        setIcon(eye, showPassword ? "eye-off" : "eye");
-      });
-      ctrl.appendChild(eye);
-    }
+    // Wrap input in a relative container so the eye button is scoped to the
+    // input's bounds on all screen sizes (mobile flex layouts break absolute
+    // positioning relative to the wider .setting-item-control).
+    const inputParent = passwordInputEl.parentNode!;
+    const wrapper = document.createElement("div");
+    wrapper.style.cssText = "position:relative;display:block;width:100%;";
+    inputParent.insertBefore(wrapper, passwordInputEl);
+    wrapper.appendChild(passwordInputEl);
+    passwordInputEl.style.paddingRight = "2em";
+    passwordInputEl.style.width = "100%";
+    passwordInputEl.style.boxSizing = "border-box";
+
+    const eye = document.createElement("button");
+    eye.type = "button";
+    eye.setAttribute("aria-label", "Toggle password visibility");
+    eye.style.cssText = "position:absolute;right:4px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:4px;line-height:1;color:var(--text-muted);";
+    setIcon(eye, "eye");
+    eye.addEventListener("click", (e) => {
+      e.stopPropagation();
+      showPassword = !showPassword;
+      passwordInputEl.type = showPassword ? "text" : "password";
+      setIcon(eye, showPassword ? "eye-off" : "eye");
+    });
+    wrapper.appendChild(eye);
 
     // Error element
     const errorEl = card.createEl("p");
