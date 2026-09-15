@@ -1,4 +1,4 @@
-import { App, Notice, Platform, PluginSettingTab, Setting, setIcon } from "obsidian";
+import { App, Notice, Platform, PluginSettingTab, Setting } from "obsidian";
 import type ObsidianTogetherPlugin from "../main";
 
 const LOCAL_URL = "http://localhost:3001";
@@ -177,9 +177,7 @@ export class TogetherSettingTab extends PluginSettingTab {
         t.onChange(v => { username = v.trim(); });
       });
 
-    // Password — flex row: [input | eye-button] so the button never overlaps
-    // the input on mobile (absolute positioning inside Obsidian's flex
-    // .setting-item-control causes the button to intercept taps on phones).
+    // Password
     let passwordInputEl!: HTMLInputElement;
     let showPassword = false;
     new Setting(card)
@@ -188,27 +186,16 @@ export class TogetherSettingTab extends PluginSettingTab {
         passwordInputEl = t.inputEl;
         t.inputEl.type = "password";
         t.onChange(v => { password = v; });
+      })
+      .addExtraButton(btn => {
+        btn.setIcon("eye");
+        btn.setTooltip("Toggle password visibility");
+        btn.onClick(() => {
+          showPassword = !showPassword;
+          passwordInputEl.type = showPassword ? "text" : "password";
+          btn.setIcon(showPassword ? "eye-off" : "eye");
+        });
       });
-
-    const inputParent = passwordInputEl.parentNode!;
-    const row = document.createElement("div");
-    row.style.cssText = "display:flex;align-items:center;width:100%;gap:4px;";
-    inputParent.insertBefore(row, passwordInputEl);
-    passwordInputEl.style.cssText = "flex:1;min-width:0;";
-    row.appendChild(passwordInputEl);
-
-    const eye = document.createElement("button");
-    eye.type = "button";
-    eye.setAttribute("aria-label", "Toggle password visibility");
-    eye.style.cssText = "flex-shrink:0;background:none;border:none;cursor:pointer;padding:4px;line-height:1;color:var(--text-muted);";
-    setIcon(eye, "eye");
-    eye.addEventListener("click", (e) => {
-      e.stopPropagation();
-      showPassword = !showPassword;
-      passwordInputEl.type = showPassword ? "text" : "password";
-      setIcon(eye, showPassword ? "eye-off" : "eye");
-    });
-    row.appendChild(eye);
 
     // Error element
     const errorEl = card.createEl("p");
