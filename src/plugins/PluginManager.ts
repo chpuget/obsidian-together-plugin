@@ -119,25 +119,32 @@ export class PluginManager {
     if (toUpdate.length === 0) return { abortSync: false };
 
     const ordered = resolveUpdateOrder(toUpdate);
-    const names = ordered.map(p => p.name).join(', ');
+
+    // Required plugins (e.g. community) must be updated first because optional
+    // plugins declare them as dependencies. Update required plugins in this cycle
+    // and let the next poll cycle handle optional plugins once required ones are
+    // reloaded with their new version.
+    const required = ordered.filter(p => p.required === true);
+    const optional = ordered.filter(p => !p.required);
+
+    if (required.length > 0) {
+      const names = required.map(p => p.name).join(', ');
+      new Notice(`Auto-updating plugins: ${names}`);
+      for (const p of required) {
+        await this.downloadPlugin(p);
+        await this.unloadPlugin(p.id);
+        await this.loadPlugin(p.id);
+      }
+      return { abortSync: true };
+    }
+
+    const names = optional.map(p => p.name).join(', ');
     new Notice(`Auto-updating plugins: ${names}`);
-
-    const tc = ordered.find(p => p.id === 'community');
-    const others = ordered.filter(p => p.id !== 'community');
-
-    for (const p of others) {
+    for (const p of optional) {
       await this.downloadPlugin(p);
       await this.unloadPlugin(p.id);
       await this.loadPlugin(p.id);
     }
-
-    if (tc) {
-      await this.downloadPlugin(tc);
-      await this.unloadPlugin(tc.id);
-      await this.loadPlugin(tc.id);
-      return { abortSync: true };
-    }
-
     return { abortSync: false };
   }
 
