@@ -29,6 +29,7 @@ export default class ObsidianTogetherPlugin extends Plugin {
   private eventBus = new EventEmitter();
   private registeredExtensions = new Map<string, unknown>();
   private traceConfig = new Map<string, TraceLevel>();
+  private debugModeActive = false;
 
   async onload(): Promise<void> {
     // Start capturing immediately so window.onerror and console.* are live
@@ -168,14 +169,15 @@ export default class ObsidianTogetherPlugin extends Plugin {
 
     // Load trace config once vault is ready, then watch for user note changes
     this.app.workspace.onLayoutReady(() => {
-      void this.app.vault.adapter.exists("debug.md").then(exists => {
-        if (exists) {
-          this.fileLogger?.attachVault(this.app.vault);
-        } else {
-          this.fileLogger?.stop();
-          this.fileLogger = null;
-        }
-      });
+      const hasDebugFile = this.app.vault.getFiles()
+        .some(f => f.path.toLowerCase() === "debug.md");
+      if (hasDebugFile) {
+        this.debugModeActive = true;
+        this.fileLogger?.attachVault(this.app.vault);
+      } else {
+        this.fileLogger?.stop();
+        this.fileLogger = null;
+      }
       this.loadTraceConfig();
       this.registerEvent(
         this.app.metadataCache.on("changed", (file) => {
@@ -240,6 +242,7 @@ export default class ObsidianTogetherPlugin extends Plugin {
   }
 
   private getTraceLevel(pluginId: string): TraceLevel {
+    if (this.debugModeActive) return "verbose";
     return this.traceConfig.get(pluginId) ?? this.traceConfig.get("all") ?? "error";
   }
 

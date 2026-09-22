@@ -16,6 +16,7 @@ export class FileLogger {
   private vault: Vault | null = null;
   private pendingLines: string[] = [];
   private flushTimer: ReturnType<typeof setInterval> | null = null;
+  private isFirstFlush = true;
 
   private readonly origLog: ConsoleFn;
   private readonly origInfo: ConsoleFn;
@@ -90,10 +91,11 @@ export class FileLogger {
     this.pendingLines = [];
     try {
       const adapter = this.vault.adapter;
-      if (await adapter.exists(DEBUG_LOG_PATH)) {
-        await adapter.append(DEBUG_LOG_PATH, content);
-      } else {
+      if (this.isFirstFlush) {
         await adapter.write(DEBUG_LOG_PATH, content);
+        this.isFirstFlush = false;
+      } else {
+        await adapter.append(DEBUG_LOG_PATH, content);
       }
     } catch (e) {
       this.origError("[FileLogger] could not write debug log:", e);
