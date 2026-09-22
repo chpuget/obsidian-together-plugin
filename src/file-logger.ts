@@ -1,6 +1,7 @@
 import type { Vault } from "obsidian";
 
-export const DEBUG_LOG_PATH = "together-debug.log";
+export const DEBUG_LOG_PATH = "together-debug.md";
+const AUTO_STOP_MS = 30_000;
 
 type ConsoleFn = (...args: unknown[]) => void;
 
@@ -58,6 +59,7 @@ export class FileLogger {
   }
 
   stop(): void {
+    this.writeLine("LOG   [FileLogger] debug session stopped");
     console.log   = this.origLog;
     console.info  = this.origInfo;
     console.warn  = this.origWarn;
@@ -65,26 +67,15 @@ export class FileLogger {
     window.removeEventListener("error", this.onErrorHandler);
     window.removeEventListener("unhandledrejection", this.onRejectionHandler);
     if (this.flushTimer !== null) { clearInterval(this.flushTimer); this.flushTimer = null; }
+    void this.flushToFile();
   }
 
   attachVault(vault: Vault): void {
     this.vault = vault;
+    this.writeLine(`LOG   [FileLogger] debug session started (auto-stop in ${AUTO_STOP_MS / 1000}s)`);
     void this.flushToFile();
     this.flushTimer = setInterval(() => void this.flushToFile(), 1000);
-  }
-
-  async clearLog(): Promise<void> {
-    this.pendingLines = [];
-    if (!this.vault) return;
-    try {
-      if (await this.vault.adapter.exists(DEBUG_LOG_PATH)) {
-        await this.vault.adapter.write(DEBUG_LOG_PATH, "");
-      }
-    } catch { /* ignore */ }
-  }
-
-  getBufferedContent(): string {
-    return this.pendingLines.join("\n");
+    setTimeout(() => this.stop(), AUTO_STOP_MS);
   }
 
   private writeLine(message: string): void {
@@ -104,6 +95,8 @@ export class FileLogger {
       } else {
         await adapter.write(DEBUG_LOG_PATH, content);
       }
-    } catch { /* ignore */ }
+    } catch (e) {
+      this.origError("[FileLogger] could not write debug log:", e);
+    }
   }
 }

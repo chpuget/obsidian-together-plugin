@@ -100,7 +100,6 @@ export interface TogetherSettings {
   devMode: boolean;
   devRepoRoot: string;
   autoUpdate: boolean;
-  debugMode: boolean;
   // ── Legacy fields kept for migration ──────────────────────────────────────
   serverUrl?: string;
   authToken?: string;
@@ -115,6 +114,5 @@ export const DEFAULT_SETTINGS: TogetherSettings = {
   devMode: false,
   devRepoRoot: '',
   autoUpdate: true,
-  debugMode: false,
 };
 

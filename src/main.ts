@@ -38,11 +38,6 @@ export default class ObsidianTogetherPlugin extends Plugin {
 
     await this.loadSettings();
 
-    if (!this.settings.debugMode) {
-      this.fileLogger.stop();
-      this.fileLogger = null;
-    }
-
     this.logger = new Logger("obsidian-together", () => this.getTraceLevel("obsidian-together"));
 
     this.authManager = new AuthManager(() => this.settings);
@@ -173,7 +168,14 @@ export default class ObsidianTogetherPlugin extends Plugin {
 
     // Load trace config once vault is ready, then watch for user note changes
     this.app.workspace.onLayoutReady(() => {
-      this.fileLogger?.attachVault(this.app.vault);
+      void this.app.vault.adapter.exists("debug.md").then(exists => {
+        if (exists) {
+          this.fileLogger?.attachVault(this.app.vault);
+        } else {
+          this.fileLogger?.stop();
+          this.fileLogger = null;
+        }
+      });
       this.loadTraceConfig();
       this.registerEvent(
         this.app.metadataCache.on("changed", (file) => {
@@ -238,7 +240,6 @@ export default class ObsidianTogetherPlugin extends Plugin {
   }
 
   private getTraceLevel(pluginId: string): TraceLevel {
-    if (this.settings.debugMode) return "verbose";
     return this.traceConfig.get(pluginId) ?? this.traceConfig.get("all") ?? "error";
   }
 
