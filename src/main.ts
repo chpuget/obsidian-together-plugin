@@ -3,6 +3,7 @@ import EventEmitter from "eventemitter3";
 import type { TogetherAPI, TogetherSettings, SavedAccount, TraceLevel } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
 import { Logger } from "./logger";
+import { FileLogger } from "./file-logger";
 import { AuthManager } from "./auth/AuthManager";
 import { PluginManager } from "./plugins/PluginManager";
 import { TogetherSettingTab } from "./settings/SettingsTab";
@@ -20,6 +21,7 @@ export default class ObsidianTogetherPlugin extends Plugin {
   authManager!: AuthManager;
   pluginManager!: PluginManager;
   logger!: Logger;
+  fileLogger: FileLogger | null = null;
 
   /** Shared API surface exposed on app.together for all ecosystem plugins. */
   togetherAPI!: TogetherAPI;
@@ -29,7 +31,17 @@ export default class ObsidianTogetherPlugin extends Plugin {
   private traceConfig = new Map<string, TraceLevel>();
 
   async onload(): Promise<void> {
+    // Start capturing immediately so window.onerror and console.* are live
+    // before any async work. Buffer is in-memory only until vault is attached.
+    this.fileLogger = new FileLogger();
+    this.fileLogger.start();
+
     await this.loadSettings();
+
+    if (!this.settings.debugMode) {
+      this.fileLogger.stop();
+      this.fileLogger = null;
+    }
 
     this.logger = new Logger("obsidian-together", () => this.getTraceLevel("obsidian-together"));
 
@@ -161,6 +173,7 @@ export default class ObsidianTogetherPlugin extends Plugin {
 
     // Load trace config once vault is ready, then watch for user note changes
     this.app.workspace.onLayoutReady(() => {
+      this.fileLogger?.attachVault(this.app.vault);
       this.loadTraceConfig();
       this.registerEvent(
         this.app.metadataCache.on("changed", (file) => {
@@ -174,6 +187,8 @@ export default class ObsidianTogetherPlugin extends Plugin {
   }
 
   onunload(): void {
+    this.fileLogger?.stop();
+    this.fileLogger = null;
     this.pluginManager.unloadAll();
     if (this.app.together === this.togetherAPI) {
       delete this.app.together;
@@ -223,6 +238,7 @@ export default class ObsidianTogetherPlugin extends Plugin {
   }
 
   private getTraceLevel(pluginId: string): TraceLevel {
+    if (this.settings.debugMode) return "verbose";
     return this.traceConfig.get(pluginId) ?? this.traceConfig.get("all") ?? "error";
   }
 

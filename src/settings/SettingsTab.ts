@@ -1,4 +1,4 @@
-import { App, Notice, Platform, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, Platform, PluginSettingTab, Setting, setIcon } from "obsidian";
 import type ObsidianTogetherPlugin from "../main";
 
 const LOCAL_URL = "http://localhost:3001";
@@ -62,6 +62,9 @@ export class TogetherSettingTab extends PluginSettingTab {
       containerEl.createEl("hr");
       this.renderDeveloperSection(containerEl);
     }
+
+    containerEl.createEl("hr");
+    this.renderDebugSection(containerEl);
   }
 
   // ── Connected state ───────────────────────────────────────────────────────────
@@ -228,6 +231,73 @@ export class TogetherSettingTab extends PluginSettingTab {
     // Login button
     new Setting(card)
       .addButton(btn => btn.setButtonText("Log in").setCta().onClick(doLogin));
+  }
+
+  // ── Debug section ─────────────────────────────────────────────────────────────
+
+  private renderDebugSection(root: HTMLElement): void {
+    root.createEl("h3", { text: "Debug" });
+    const card = root.createDiv({ cls: "together-card" });
+
+    new Setting(card)
+      .setName("Debug mode")
+      .setDesc("Capture all console output to together-debug.log in the vault root. Enable, restart Obsidian, reproduce the issue, then share the file.")
+      .addToggle(toggle => {
+        toggle.setValue(this.plugin.settings.debugMode);
+        toggle.onChange(async (v) => {
+          this.plugin.settings.debugMode = v;
+          this.plugin.saveSettings();
+          new Notice(v
+            ? "Debug mode enabled — restart Obsidian to start logging."
+            : "Debug mode disabled.",
+            4000
+          );
+          this.display();
+        });
+      });
+
+    if (this.plugin.settings.debugMode) {
+      const desc = document.createDocumentFragment();
+      desc.append("Log file: ");
+      const code = document.createElement("code");
+      code.textContent = "together-debug.log";
+      desc.append(code);
+      desc.append(" (vault root). Share via Files app or iCloud.");
+
+      new Setting(card)
+        .setName("Log file")
+        .setDesc(desc)
+        .addButton(btn => {
+          btn.setButtonText("Copy to clipboard");
+          setIcon(btn.buttonEl, "copy");
+          btn.onClick(async () => {
+            const fl = this.plugin.fileLogger;
+            let content = "";
+            if (fl) {
+              content = fl.getBufferedContent();
+            } else {
+              try {
+                content = await this.app.vault.adapter.read("together-debug.log");
+              } catch {
+                new Notice("Log file not found.", 4000);
+                return;
+              }
+            }
+            await navigator.clipboard.writeText(content);
+            new Notice("Log copied to clipboard.", 3000);
+          });
+        })
+        .addButton(btn => {
+          btn.setButtonText("Clear");
+          setIcon(btn.buttonEl, "trash");
+          btn.setWarning();
+          btn.onClick(async () => {
+            await this.plugin.fileLogger?.clearLog();
+            try { await this.app.vault.adapter.write("together-debug.log", ""); } catch { /* ignore */ }
+            new Notice("Debug log cleared.", 3000);
+          });
+        });
+    }
   }
 
   // ── Developer section ─────────────────────────────────────────────────────────
