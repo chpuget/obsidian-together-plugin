@@ -59,6 +59,7 @@ export class PluginManager {
   private _installedVersions: Record<string, string> = {};
   private _installedBuildDates: Record<string, string> = {};
   private _loadedPlugins = new Map<string, any>();
+  private _failedUpdateVersions = new Set<string>(); // id@version combos that failed to load
   private _loadingPromise: Promise<void> | null = null;
   private _previewCache: PreviewCache | null = null;
   isOnline = false;
@@ -114,7 +115,9 @@ export class PluginManager {
   async autoUpdate(): Promise<{ abortSync: boolean }> {
     await this.refreshAvailablePlugins();
     const toUpdate = this._availablePlugins.filter(
-      p => p.id in this._installedVersions && this.hasUpdate(p.id)
+      p => p.id in this._installedVersions &&
+           this.hasUpdate(p.id) &&
+           !this._failedUpdateVersions.has(`${p.id}@${p.version}`)
     );
     if (toUpdate.length === 0) return { abortSync: false };
 
@@ -133,7 +136,13 @@ export class PluginManager {
       for (const p of required) {
         await this.downloadPlugin(p);
         await this.unloadPlugin(p.id);
-        await this.loadPlugin(p.id);
+        try {
+          await this.loadPlugin(p.id);
+        } catch (e) {
+          this.logger.error(`[PluginManager] autoUpdate: failed to load ${p.id}@${p.version}:`, e);
+          this._failedUpdateVersions.add(`${p.id}@${p.version}`);
+          throw e;
+        }
       }
       return { abortSync: true };
     }
@@ -143,7 +152,13 @@ export class PluginManager {
     for (const p of optional) {
       await this.downloadPlugin(p);
       await this.unloadPlugin(p.id);
-      await this.loadPlugin(p.id);
+      try {
+        await this.loadPlugin(p.id);
+      } catch (e) {
+        this.logger.error(`[PluginManager] autoUpdate: failed to load ${p.id}@${p.version}:`, e);
+        this._failedUpdateVersions.add(`${p.id}@${p.version}`);
+        throw e;
+      }
     }
     return { abortSync: false };
   }
