@@ -1,4 +1,4 @@
-import { Plugin, Platform, Notice } from "obsidian";
+import { Plugin, Platform, Notice, App, WorkspaceLeaf } from "obsidian";
 import EventEmitter from "eventemitter3";
 import type { TogetherAPI, TogetherSettings, SavedAccount, TraceLevel } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
@@ -131,12 +131,23 @@ export default class ObsidianTogetherPlugin extends Plugin {
     // Block automatic file creation when clicking unresolved links.
     // Obsidian's default openLinkText creates an empty file when the target doesn't
     // exist; we intercept it and show a notice instead.
+    // Also redirects to the central panel when the active leaf is in a sidedock,
+    // so external obsidian:// links never hijack the sidebar.
     const _origOpenLinkText = this.app.workspace.openLinkText.bind(this.app.workspace);
     this.app.workspace.openLinkText = (linktext, sourcePath, newLeaf?, openViewState?) => {
       const dest = this.app.metadataCache.getFirstLinkpathDest(linktext, sourcePath ?? "");
       if (!dest) {
         new Notice(`File not found: "${linktext}"`);
         return Promise.resolve();
+      }
+      if (!newLeaf) {
+        const active = this.app.workspace.activeLeaf;
+        if (active && isInSidedock(active, this.app)) {
+          this.app.workspace.setActiveLeaf(
+            getOrCreateCentralLeaf(this.app),
+            { focus: false },
+          );
+        }
       }
       return _origOpenLinkText(linktext, sourcePath, newLeaf, openViewState);
     };
@@ -329,4 +340,22 @@ export default class ObsidianTogetherPlugin extends Plugin {
     this.registeredExtensions.delete(id);
     this.eventBus.emit("together:extension-unregistered", { id });
   }
+}
+
+function isInSidedock(leaf: WorkspaceLeaf, app: App): boolean {
+  let node: any = (leaf as any).parent;
+  while (node) {
+    if (node === app.workspace.rootSplit)  return false;
+    if (node === app.workspace.leftSplit || node === app.workspace.rightSplit) return true;
+    node = node.parent;
+  }
+  return false;
+}
+
+function getOrCreateCentralLeaf(app: App): WorkspaceLeaf {
+  let central: WorkspaceLeaf | null = null;
+  app.workspace.iterateAllLeaves((l: WorkspaceLeaf) => {
+    if (!central && !isInSidedock(l, app)) central = l;
+  });
+  return central ?? app.workspace.createLeafInParent(app.workspace.rootSplit, 0);
 }
