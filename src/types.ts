@@ -88,6 +88,7 @@ export interface SavedAccount {
   token: string;           // JWT — may be empty if logged out
   displayName?: string;
   encryptedPassword?: string; // base64-encoded Buffer from electron safeStorage
+  refreshToken?: string;  // long-lived token for silent JWT renewal
   isAdmin?: boolean;
   branch?: string;   // "dev" | "prod" — absent means prod
 }

@@ -57,6 +57,7 @@ export class AuthManager {
 
     const data = await response.json() as {
       token: string;
+      refreshToken?: string;
       user: { id: string; username: string; displayName?: string; isAdmin?: boolean };
       branch?: string;
     };
@@ -69,6 +70,7 @@ export class AuthManager {
       serverUrl,
       userId: user.id,
       token,
+      refreshToken: data.refreshToken,
       displayName: user.displayName,
       isAdmin: user.isAdmin ?? false,
       branch: data.branch,
@@ -91,8 +93,25 @@ export class AuthManager {
     return account;
   }
 
+  private async refreshAccessToken(account: SavedAccount): Promise<{ token: string; refreshToken: string } | null> {
+    if (!account.refreshToken || !account.serverUrl) return null;
+    try {
+      const response = await fetch(`${account.serverUrl}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: account.refreshToken }),
+      });
+      if (response.status === 200 || response.status === 201) {
+        return await response.json() as { token: string; refreshToken: string };
+      }
+    } catch {
+      // network error — treat as failure
+    }
+    return null;
+  }
+
   /** Switch to an already-saved account by index.
-   *  Validates the stored token; if expired, tries silent re-login with stored encrypted password.
+   *  Validates the stored token; if expired, tries refresh token then encrypted password.
    *  Caller must saveSettings() and emit "together:account-switched". */
   async switchAccount(index: number): Promise<boolean> {
     const settings = this.getSettings();
@@ -108,7 +127,22 @@ export class AuthManager {
       }
     }
 
-    // Token missing or expired — try silent re-login with stored encrypted password
+    // Token missing or expired — try refresh token first (works on all platforms)
+    if (account.refreshToken) {
+      const refreshed = await this.refreshAccessToken(account);
+      if (refreshed) {
+        account.token = refreshed.token;
+        account.refreshToken = refreshed.refreshToken;
+        // validateToken also populates this.state from /auth/me
+        const ok = await this.validateToken(refreshed.token, account.serverUrl);
+        if (ok) {
+          settings.activeAccountIndex = index;
+          return true;
+        }
+      }
+    }
+
+    // Fallback: try silent re-login with stored encrypted password (desktop only)
     const storage = getSafeStorage();
     if (account.encryptedPassword && storage?.isEncryptionAvailable()) {
       try {
@@ -148,7 +182,17 @@ export class AuthManager {
     const settings = this.getSettings();
     const idx = settings.activeAccountIndex;
     if (idx >= 0 && settings.accounts[idx]) {
-      settings.accounts[idx].token = "";
+      const account = settings.accounts[idx];
+      // Fire-and-forget revocation — don't block logout on network
+      if (account.refreshToken && account.serverUrl) {
+        fetch(`${account.serverUrl}/auth/logout`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken: account.refreshToken }),
+        }).catch(() => {});
+      }
+      account.token = '';
+      account.refreshToken = undefined;
     }
     settings.activeAccountIndex = -1;
     this.state = { token: null, userId: null, username: null, serverUrl: null, isLoggedIn: false, isAdmin: false, branch: null };
