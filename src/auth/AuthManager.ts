@@ -93,7 +93,7 @@ export class AuthManager {
     return account;
   }
 
-  private async refreshAccessToken(account: SavedAccount): Promise<{ token: string; refreshToken: string } | null> {
+  private async refreshAccessToken(account: SavedAccount): Promise<{ token: string; refreshToken: string } | 'expired' | null> {
     if (!account.refreshToken || !account.serverUrl) return null;
     try {
       const response = await fetch(`${account.serverUrl}/auth/refresh`, {
@@ -104,6 +104,7 @@ export class AuthManager {
       if (response.status === 200 || response.status === 201) {
         return await response.json() as { token: string; refreshToken: string };
       }
+      if (response.status === 401 || response.status === 403) return 'expired';
     } catch {
       // network error — treat as failure
     }
@@ -130,7 +131,9 @@ export class AuthManager {
     // Token missing or expired — try refresh token first (works on all platforms)
     if (account.refreshToken) {
       const refreshed = await this.refreshAccessToken(account);
-      if (refreshed) {
+      if (refreshed === 'expired') {
+        account.refreshToken = undefined; // server definitively rejected — clear to avoid repeated doomed calls
+      } else if (refreshed) {
         account.token = refreshed.token;
         account.refreshToken = refreshed.refreshToken;
         // validateToken also populates this.state from /auth/me
