@@ -17,6 +17,19 @@ function getSafeStorage(): SafeStorage | undefined {
   }
 }
 
+/** Reads the `exp` claim (seconds since epoch) of a JWT without verifying it. */
+function decodeJwtExp(token: string): number | null {
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return null;
+    const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
+    const exp = (JSON.parse(json) as { exp?: unknown }).exp;
+    return typeof exp === 'number' ? exp : null;
+  } catch {
+    return null;
+  }
+}
+
 export class AuthManager {
   private state: AuthState = {
     token: null,
@@ -109,6 +122,47 @@ export class AuthManager {
       // network error — treat as failure
     }
     return null;
+  }
+
+  private refreshInFlight: Promise<boolean> | null = null;
+
+  /** Renew the active account's JWT using its refresh token, without touching the rest of the session.
+   *  Concurrent calls share one request (the refresh token is single-use — a second call would be rejected).
+   *  Returns false on network failure (refresh token kept for a later retry) or definitive rejection
+   *  (refresh token cleared). Caller must saveSettings(). */
+  refreshSession(): Promise<boolean> {
+    if (!this.refreshInFlight) {
+      this.refreshInFlight = this.doRefreshSession().finally(() => { this.refreshInFlight = null; });
+    }
+    return this.refreshInFlight;
+  }
+
+  private async doRefreshSession(): Promise<boolean> {
+    const settings = this.getSettings();
+    const account = settings.accounts[settings.activeAccountIndex];
+    if (!account?.refreshToken) return false;
+
+    const refreshed = await this.refreshAccessToken(account);
+    if (refreshed === 'expired') {
+      account.refreshToken = undefined;
+      return false;
+    }
+    if (!refreshed) return false;
+
+    account.token = refreshed.token;
+    account.refreshToken = refreshed.refreshToken;
+    if (this.state.isLoggedIn && this.state.serverUrl === account.serverUrl) {
+      this.state = { ...this.state, token: refreshed.token };
+      return true;
+    }
+    // Session was not established (e.g. offline at startup) — populate state from /auth/me
+    return this.validateToken(refreshed.token, account.serverUrl);
+  }
+
+  /** True when the in-memory JWT expires within `ms` milliseconds. False if no token or no readable exp. */
+  tokenExpiresWithin(ms: number): boolean {
+    const exp = this.state.token ? decodeJwtExp(this.state.token) : null;
+    return exp !== null && exp * 1000 - Date.now() < ms;
   }
 
   /** Switch to an already-saved account by index.

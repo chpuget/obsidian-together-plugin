@@ -64,6 +64,10 @@ export interface TogetherAPI {
   /** Clear the stored encrypted password for the active account.
    *  Call after a successful password change. */
   clearStoredPassword(): void;
+  /** Silently renew the JWT with the stored refresh token. Call on an HTTP 401 before
+   *  prompting for re-login: resolves true when `auth.token` now holds a fresh token.
+   *  Optional so older versions of plugin-core don't break sub-plugins. */
+  refreshAuth?(): Promise<boolean>;
   /** Create a logger bound to a plugin ID, respecting the current user's trace config.
    *  Optional so older versions of plugin-core don't break sub-plugins. */
   createLogger?(pluginId: string): Logger;

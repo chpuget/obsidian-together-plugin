@@ -9,6 +9,10 @@ import { PluginManager } from "./plugins/PluginManager";
 import { TogetherSettingTab } from "./settings/SettingsTab";
 import { applyCoreLegacyMigration } from "./settings-migration";
 
+const TOKEN_CHECK_INTERVAL_MS = 15 * 60 * 1000;
+/** Renew the JWT once less than this remains before expiry. */
+const TOKEN_RENEW_MARGIN_MS = 24 * 60 * 60 * 1000;
+
 // Augment the Obsidian App type so TypeScript knows about app.together
 declare module "obsidian" {
   interface App {
@@ -60,8 +64,9 @@ export default class ObsidianTogetherPlugin extends Plugin {
       if (idx >= 0 && state.username && this.settings.accounts[idx]) {
         this.settings.accounts[idx].userId = state.userId ?? this.settings.accounts[idx].userId;
       }
-      await this.saveSettings();
     }
+    // Save even on failure: a rotated or cleared refresh token must not be lost
+    await this.saveSettings();
 
     // Build the shared API surface
     this.togetherAPI = {
@@ -105,6 +110,14 @@ export default class ObsidianTogetherPlugin extends Plugin {
       clearStoredPassword: (): void => {
         this.authManager.clearStoredPassword();
         void this.saveSettings();
+      },
+
+      refreshAuth: async (): Promise<boolean> => {
+        const wasLoggedIn = this.authManager.getState().isLoggedIn;
+        const ok = await this.authManager.refreshSession();
+        this.saveSettings();
+        if (ok && !wasLoggedIn) this.emitAccountSwitched();
+        return ok;
       },
 
       createLogger: (pluginId: string) =>
@@ -161,6 +174,15 @@ export default class ObsidianTogetherPlugin extends Plugin {
       }
     });
 
+    // Keep the JWT fresh while Obsidian stays open (it is otherwise only renewed at startup).
+    // Timers freeze while a mobile app is in background, so also check on resume and reconnect.
+    const checkToken = () => { void this.ensureFreshToken(); };
+    this.registerInterval(window.setInterval(checkToken, TOKEN_CHECK_INTERVAL_MS));
+    this.registerDomEvent(document, "visibilitychange", () => {
+      if (document.visibilityState === "visible") checkToken();
+    });
+    this.registerDomEvent(window, "online", checkToken);
+
     // On startup, ensure plugins are loaded from disk even when not logged in
     // (community must always run so it can display the login screen).
     void this.pluginManager.ensurePluginsLoaded()
@@ -188,6 +210,22 @@ export default class ObsidianTogetherPlugin extends Plugin {
     });
 
     this.logger.info("loaded (v" + this.manifest.version + ")");
+  }
+
+  private emitAccountSwitched(): void {
+    const s = this.authManager.getState();
+    this.eventBus.emit("together:account-switched", { username: s.username, serverUrl: s.serverUrl });
+  }
+
+  /** Renews the JWT when close to expiry, or recovers a session that could not be restored
+   *  at startup (e.g. offline). No-op when logged out on purpose or without refresh token. */
+  private async ensureFreshToken(): Promise<void> {
+    const state = this.authManager.getState();
+    const account = this.settings.accounts[this.settings.activeAccountIndex];
+    if (!account?.refreshToken) return;
+    if (state.isLoggedIn && !this.authManager.tokenExpiresWithin(TOKEN_RENEW_MARGIN_MS)) return;
+    const ok = await this.togetherAPI.refreshAuth!();
+    if (ok) this.logger.info(state.isLoggedIn ? "auth token renewed" : "session restored");
   }
 
   onunload(): void {
