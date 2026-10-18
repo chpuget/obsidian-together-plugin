@@ -173,13 +173,18 @@ export class AuthManager {
     const account = settings.accounts[index];
     if (!account) return false;
 
+    // Set when a credential could not be checked because the server was unreachable:
+    // the session is then "offline" (auto-reconnect) rather than requiring a new login.
+    let unreachable = false;
+
     if (account.token) {
-      const ok = await this.validateToken(account.token, account.serverUrl);
-      if (ok) {
-        // validateToken already populated this.state.branch from /auth/me
+      const result = await this.checkToken(account.token, account.serverUrl);
+      if (result === 'ok') {
+        // checkToken already populated this.state.branch from /auth/me
         settings.activeAccountIndex = index;
         return true;
       }
+      if (result === 'unreachable') unreachable = true;
     }
 
     // Token missing or expired — try refresh token first (works on all platforms)
@@ -187,15 +192,19 @@ export class AuthManager {
       const refreshed = await this.refreshAccessToken(account);
       if (refreshed === 'expired') {
         account.refreshToken = undefined; // server definitively rejected — clear to avoid repeated doomed calls
-      } else if (refreshed) {
+        unreachable = false; // server answered: the token check failure was not a connectivity issue
+      } else if (!refreshed) {
+        unreachable = true;
+      } else {
         account.token = refreshed.token;
         account.refreshToken = refreshed.refreshToken;
-        // validateToken also populates this.state from /auth/me
-        const ok = await this.validateToken(refreshed.token, account.serverUrl);
-        if (ok) {
+        // checkToken also populates this.state from /auth/me
+        const result = await this.checkToken(refreshed.token, account.serverUrl);
+        if (result === 'ok') {
           settings.activeAccountIndex = index;
           return true;
         }
+        if (result === 'unreachable') unreachable = true;
       }
     }
 
@@ -221,6 +230,7 @@ export class AuthManager {
       isLoggedIn: false,
       isAdmin: account.isAdmin ?? false,
       branch: null,
+      offline: unreachable,
     };
     return false;
   }
@@ -281,7 +291,12 @@ export class AuthManager {
 
   /** Validate a token against a server URL and populate state if valid. */
   async validateToken(token: string, serverUrl: string): Promise<boolean> {
-    if (!token || !serverUrl) return false;
+    return (await this.checkToken(token, serverUrl)) === 'ok';
+  }
+
+  /** Like validateToken, but tells a rejected token (401/403) apart from an unreachable server. */
+  private async checkToken(token: string, serverUrl: string): Promise<'ok' | 'invalid' | 'unreachable'> {
+    if (!token || !serverUrl) return 'invalid';
     try {
       const response = await fetch(`${serverUrl}/auth/me`, {
         method: "GET",
@@ -291,12 +306,13 @@ export class AuthManager {
         const user = await response.json() as { id: string; username: string; displayName?: string; isAdmin?: boolean; branch?: string };
         const branch = user.branch === 'dev' ? 'dev' : (user.branch ?? null);
         this.state = { token, userId: user.id, username: user.username, serverUrl, isLoggedIn: true, isAdmin: user.isAdmin ?? false, branch };
-        return true;
+        return 'ok';
       }
+      if (response.status === 401 || response.status === 403) return 'invalid';
     } catch {
-      // network error — treat as invalid
+      // network error
     }
-    return false;
+    return 'unreachable';
   }
 
   /** Restore session from the active saved account on startup. */

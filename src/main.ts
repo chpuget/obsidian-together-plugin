@@ -9,7 +9,8 @@ import { PluginManager } from "./plugins/PluginManager";
 import { TogetherSettingTab } from "./settings/SettingsTab";
 import { applyCoreLegacyMigration } from "./settings-migration";
 
-const TOKEN_CHECK_INTERVAL_MS = 15 * 60 * 1000;
+/** Cheap when online (local JWT exp check); also the retry pace of an offline session. */
+const TOKEN_CHECK_INTERVAL_MS = 60 * 1000;
 /** Renew the JWT once less than this remains before expiry. */
 const TOKEN_RENEW_MARGIN_MS = 24 * 60 * 60 * 1000;
 
@@ -116,7 +117,7 @@ export default class ObsidianTogetherPlugin extends Plugin {
         const wasLoggedIn = this.authManager.getState().isLoggedIn;
         const ok = await this.authManager.refreshSession();
         this.saveSettings();
-        if (ok && !wasLoggedIn) this.emitAccountSwitched();
+        if (ok && !wasLoggedIn) this.emitAccountSwitched(true);
         return ok;
       },
 
@@ -212,20 +213,45 @@ export default class ObsidianTogetherPlugin extends Plugin {
     this.logger.info("loaded (v" + this.manifest.version + ")");
   }
 
-  private emitAccountSwitched(): void {
+  /** `reconnected`: same session restored silently (network back) — listeners should
+   *  resume work without resetting the UI. */
+  private emitAccountSwitched(reconnected = false): void {
     const s = this.authManager.getState();
-    this.eventBus.emit("together:account-switched", { username: s.username, serverUrl: s.serverUrl });
+    this.eventBus.emit("together:account-switched", { username: s.username, serverUrl: s.serverUrl, reconnected });
   }
 
-  /** Renews the JWT when close to expiry, or recovers a session that could not be restored
-   *  at startup (e.g. offline). No-op when logged out on purpose or without refresh token. */
+  private reconnecting = false;
+
+  /** Renews the JWT when close to expiry, or reconnects a session that is offline
+   *  (server unreachable at startup). No-op when logged out on purpose. */
   private async ensureFreshToken(): Promise<void> {
     const state = this.authManager.getState();
+    if (!state.isLoggedIn) {
+      if (state.offline) await this.reconnectOfflineSession();
+      return;
+    }
     const account = this.settings.accounts[this.settings.activeAccountIndex];
-    if (!account?.refreshToken) return;
-    if (state.isLoggedIn && !this.authManager.tokenExpiresWithin(TOKEN_RENEW_MARGIN_MS)) return;
-    const ok = await this.togetherAPI.refreshAuth!();
-    if (ok) this.logger.info(state.isLoggedIn ? "auth token renewed" : "session restored");
+    if (!account?.refreshToken || !this.authManager.tokenExpiresWithin(TOKEN_RENEW_MARGIN_MS)) return;
+    if (await this.togetherAPI.refreshAuth!()) this.logger.info("auth token renewed");
+  }
+
+  private async reconnectOfflineSession(): Promise<void> {
+    if (this.reconnecting) return;
+    this.reconnecting = true;
+    try {
+      const index = this.settings.activeAccountIndex;
+      const ok = await this.authManager.switchAccount(index);
+      this.saveSettings();
+      if (ok) {
+        this.logger.info("session restored after reconnect");
+        this.emitAccountSwitched(true);
+      } else if (!this.authManager.getState().offline) {
+        // Server reachable again but credentials rejected — now a real re-login is needed
+        this.eventBus.emit("together:relogin-required", { index });
+      }
+    } finally {
+      this.reconnecting = false;
+    }
   }
 
   onunload(): void {

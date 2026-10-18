@@ -98,3 +98,65 @@ describe("AuthManager.tokenExpiresWithin", () => {
     expect(auth.tokenExpiresWithin(1000)).toBe(false); // no token
   });
 });
+
+describe("AuthManager.switchAccount offline detection", () => {
+  let settings: TogetherSettings;
+  let auth: AuthManager;
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    settings = makeSettings();
+    auth = new AuthManager(() => settings);
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockReset();
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("flags offline (not logged out) when the server is unreachable", async () => {
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+    expect(await auth.switchAccount(0)).toBe(false);
+    expect(auth.getState().isLoggedIn).toBe(false);
+    expect(auth.getState().offline).toBe(true);
+    expect(settings.accounts[0].refreshToken).toBe("rt-1");
+  });
+
+  it("treats a 5xx (server down) as offline", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(502));
+    await auth.switchAccount(0);
+    expect(auth.getState().offline).toBe(true);
+  });
+
+  it("is not offline when the server definitively rejects the credentials", async () => {
+    fetchMock.mockResolvedValue(jsonResponse(401));
+    await auth.switchAccount(0);
+    expect(auth.getState().isLoggedIn).toBe(false);
+    expect(auth.getState().offline).toBe(false);
+  });
+
+  it("stays offline when the token is rejected but the refresh call cannot reach the server", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith("/auth/me")) return jsonResponse(401);
+      throw new TypeError("Failed to fetch");
+    });
+    await auth.switchAccount(0);
+    expect(auth.getState().offline).toBe(true);
+  });
+
+  it("is not offline when the server is unreachable but no credential could ever succeed", async () => {
+    settings.accounts[0].token = "";
+    settings.accounts[0].refreshToken = undefined;
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+    await auth.switchAccount(0);
+    expect(auth.getState().offline).toBe(false);
+  });
+
+  it("clears the offline flag once logged in", async () => {
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+    await auth.switchAccount(0);
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue(jsonResponse(200, { id: "u1", username: "alice" }));
+    expect(await auth.switchAccount(0)).toBe(true);
+    expect(auth.getState().offline).toBeFalsy();
+  });
+});

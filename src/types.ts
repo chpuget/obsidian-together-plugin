@@ -82,6 +82,10 @@ export interface AuthState {
   readonly isLoggedIn: boolean;
   readonly isAdmin: boolean;
   readonly branch: string | null;   // "dev" | "prod" | null (null = prod default)
+  /** True when not logged in only because the server could not be reached (no network,
+   *  server down): credentials are kept and the session reconnects automatically.
+   *  UIs should show an offline indicator rather than a login prompt. */
+  readonly offline?: boolean;
 }
 
 /** A saved account credential (persisted in data.json). */
