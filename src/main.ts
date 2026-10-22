@@ -21,7 +21,7 @@ declare module "obsidian" {
   }
 }
 
-export default class ObsidianTogetherPlugin extends Plugin {
+export default class HubFolksPlugin extends Plugin {
   settings!: TogetherSettings;
   authManager!: AuthManager;
   pluginManager!: PluginManager;
@@ -44,7 +44,7 @@ export default class ObsidianTogetherPlugin extends Plugin {
 
     await this.loadSettings();
 
-    this.logger = new Logger("obsidian-together", () => this.getTraceLevel("obsidian-together"));
+    this.logger = new Logger("hubfolks", () => this.getTraceLevel("hubfolks"));
 
     this.authManager = new AuthManager(() => this.settings);
 
@@ -160,7 +160,7 @@ export default class ObsidianTogetherPlugin extends Plugin {
     this.addSettingTab(new TogetherSettingTab(this.app, this));
 
     // Ribbon icon (placeholder)
-    this.addRibbonIcon("users", "Obsidian Together", () => {
+    this.addRibbonIcon("users", "HubFolks", () => {
       // TODO: open Together panel
     });
 
@@ -313,7 +313,7 @@ export default class ObsidianTogetherPlugin extends Plugin {
   // ── Settings ──────────────────────────────────────────────────────────────────
 
   private get _lsKey(): string {
-    return `obsidian-together:${this.app.vault.getName()}`;
+    return `hubfolks:${this.app.vault.getName()}`;
   }
 
   async loadSettings(): Promise<void> {
@@ -354,7 +354,7 @@ export default class ObsidianTogetherPlugin extends Plugin {
       const adapter = this.app.vault.adapter as any;
       const base: string = adapter.basePath ?? adapter.getBasePath?.() ?? '';
       if (!base) return { ok: false, message: 'Could not determine vault path' };
-      const targetPath = path.join(base, '.obsidian', 'plugins', 'obsidian-together', 'sub-plugins');
+      const targetPath = path.join(base, '.obsidian', 'plugins', 'hubfolks', 'sub-plugins');
 
       if (enable) {
         const { devRepoRoot } = this.settings;

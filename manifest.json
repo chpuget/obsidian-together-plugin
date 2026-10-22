@@ -1,17 +1,17 @@
 {
-  "id": "obsidian-together",
-  "name": "Obsidian Together",
+  "id": "hubfolks",
+  "name": "HubFolks",
   "version": "0.1.54",
   "minAppVersion": "1.5.0",
-  "description": "Core plugin for the Obsidian Together ecosystem — auth, plugin registry, and shared API surface.",
+  "description": "Core plugin for the HubFolks ecosystem — auth, plugin registry, and shared API surface.",
   "author": "Christophe Puget",
-  "authorUrl": "https://obsidiantogether.com",
+  "authorUrl": "https://www.hubfolks.com",
   "isDesktopOnly": false,
   "together": {
     "layer": 1,
     "requires": [],
     "provides": [
-      "obsidian-together"
+      "hubfolks"
     ]
   }
 }

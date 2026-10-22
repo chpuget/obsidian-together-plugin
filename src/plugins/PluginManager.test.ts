@@ -49,21 +49,21 @@ describe('PluginManager path helpers', () => {
   it('_bundlePath uses per-plugin subfolder', () => {
     const pm = makepm();
     expect(pm['_bundlePath']('behringer-console')).toBe(
-      '.obsidian/plugins/obsidian-together/sub-plugins/behringer-console/main.js'
+      '.obsidian/plugins/hubfolks/sub-plugins/behringer-console/main.js'
     );
   });
 
   it('_versionPath uses per-plugin subfolder', () => {
     const pm = makepm();
     expect(pm['_versionPath']('games')).toBe(
-      '.obsidian/plugins/obsidian-together/sub-plugins/games/main.version'
+      '.obsidian/plugins/hubfolks/sub-plugins/games/main.version'
     );
   });
 
   it('_buildDatePath uses per-plugin subfolder', () => {
     const pm = makepm();
     expect(pm['_buildDatePath']('music-band')).toBe(
-      '.obsidian/plugins/obsidian-together/sub-plugins/music-band/main.builddate'
+      '.obsidian/plugins/hubfolks/sub-plugins/music-band/main.builddate'
     );
   });
 });
@@ -192,7 +192,7 @@ describe('PluginManager.syncEnabledPlugins', () => {
     const adapter = {
       exists: vi.fn().mockResolvedValue(true),
       list: vi.fn()
-        .mockResolvedValueOnce({ files: [], folders: ['.obsidian/plugins/obsidian-together/sub-plugins/together-community'] })
+        .mockResolvedValueOnce({ files: [], folders: ['.obsidian/plugins/hubfolks/sub-plugins/together-community'] })
         .mockResolvedValueOnce({ files: [], folders: [] }),
       rmdir: vi.fn().mockResolvedValue(undefined),
       read: vi.fn().mockResolvedValue(''),
@@ -217,7 +217,7 @@ describe('PluginManager.syncEnabledPlugins', () => {
 
     expect(unload).toHaveBeenCalledWith('together-community');
     expect(adapter.rmdir).toHaveBeenCalledWith(
-      '.obsidian/plugins/obsidian-together/sub-plugins/together-community',
+      '.obsidian/plugins/hubfolks/sub-plugins/together-community',
       true
     );
     expect(pm['_installedVersions']['together-community']).toBeUndefined();
@@ -229,8 +229,8 @@ describe('PluginManager.syncEnabledPlugins', () => {
     const adapter = {
       exists: vi.fn().mockResolvedValue(true),
       list: vi.fn()
-        .mockResolvedValueOnce({ files: [], folders: ['.obsidian/plugins/obsidian-together/sub-plugins/together-community'] })
-        .mockResolvedValueOnce({ files: [], folders: ['.obsidian/plugins/obsidian-together/previews/together-community'] }),
+        .mockResolvedValueOnce({ files: [], folders: ['.obsidian/plugins/hubfolks/sub-plugins/together-community'] })
+        .mockResolvedValueOnce({ files: [], folders: ['.obsidian/plugins/hubfolks/previews/together-community'] }),
       rmdir: vi.fn().mockResolvedValue(undefined),
       read: vi.fn().mockResolvedValue(vaultContent),
       write: vi.fn().mockImplementation((_p: string, c: string) => { writtenContent = c; return Promise.resolve(); }),
@@ -252,11 +252,11 @@ describe('PluginManager.syncEnabledPlugins', () => {
     expect(writtenContent).toContain('music-band');
     expect(adapter.rmdir).toHaveBeenCalledTimes(2);
     expect(adapter.rmdir).toHaveBeenCalledWith(
-      '.obsidian/plugins/obsidian-together/sub-plugins/together-community',
+      '.obsidian/plugins/hubfolks/sub-plugins/together-community',
       true
     );
     expect(adapter.rmdir).toHaveBeenCalledWith(
-      '.obsidian/plugins/obsidian-together/previews/together-community',
+      '.obsidian/plugins/hubfolks/previews/together-community',
       true
     );
   });
@@ -266,7 +266,7 @@ describe('PluginManager.syncEnabledPlugins', () => {
       exists: vi.fn().mockResolvedValue(true),
       list: vi.fn().mockResolvedValue({
         files: [],
-        folders: ['.obsidian/plugins/obsidian-together/sub-plugins/together-community'],
+        folders: ['.obsidian/plugins/hubfolks/sub-plugins/together-community'],
       }),
       rmdir: vi.fn().mockResolvedValue(undefined),
     };
@@ -289,7 +289,7 @@ describe('PluginManager.syncEnabledPlugins', () => {
       exists: vi.fn().mockResolvedValue(true),
       list: vi.fn().mockResolvedValue({
         files: [],
-        folders: ['.obsidian/plugins/obsidian-together/previews/together-community'],
+        folders: ['.obsidian/plugins/hubfolks/previews/together-community'],
       }),
       rmdir: vi.fn().mockResolvedValue(undefined),
     };
@@ -307,7 +307,7 @@ describe('PluginManager.syncEnabledPlugins', () => {
     await pm.syncEnabledPlugins('alice');
 
     expect(adapter.rmdir).toHaveBeenCalledWith(
-      '.obsidian/plugins/obsidian-together/previews/together-community',
+      '.obsidian/plugins/hubfolks/previews/together-community',
       true
     );
   });
@@ -329,7 +329,7 @@ describe('PluginManager._migrateOldFlatFiles', () => {
       exists: vi.fn().mockResolvedValue(true),
       list: vi.fn().mockResolvedValue({
         files: [
-          '.obsidian/plugins/obsidian-together/sub-plugins/old-plugin.js',
+          '.obsidian/plugins/hubfolks/sub-plugins/old-plugin.js',
         ],
         folders: [],
       }),
@@ -339,7 +339,7 @@ describe('PluginManager._migrateOldFlatFiles', () => {
 
     await pm['_migrateOldFlatFiles']();
 
-    expect(adapter.remove).toHaveBeenCalledWith('.obsidian/plugins/obsidian-together/sub-plugins/old-plugin.js');
+    expect(adapter.remove).toHaveBeenCalledWith('.obsidian/plugins/hubfolks/sub-plugins/old-plugin.js');
   });
 
   it('removes .version files from sub-plugins directory', async () => {
@@ -347,7 +347,7 @@ describe('PluginManager._migrateOldFlatFiles', () => {
       exists: vi.fn().mockResolvedValue(true),
       list: vi.fn().mockResolvedValue({
         files: [
-          '.obsidian/plugins/obsidian-together/sub-plugins/plugin.version',
+          '.obsidian/plugins/hubfolks/sub-plugins/plugin.version',
         ],
         folders: [],
       }),
@@ -357,7 +357,7 @@ describe('PluginManager._migrateOldFlatFiles', () => {
 
     await pm['_migrateOldFlatFiles']();
 
-    expect(adapter.remove).toHaveBeenCalledWith('.obsidian/plugins/obsidian-together/sub-plugins/plugin.version');
+    expect(adapter.remove).toHaveBeenCalledWith('.obsidian/plugins/hubfolks/sub-plugins/plugin.version');
   });
 
   it('removes .builddate files from sub-plugins directory', async () => {
@@ -365,7 +365,7 @@ describe('PluginManager._migrateOldFlatFiles', () => {
       exists: vi.fn().mockResolvedValue(true),
       list: vi.fn().mockResolvedValue({
         files: [
-          '.obsidian/plugins/obsidian-together/sub-plugins/plugin.builddate',
+          '.obsidian/plugins/hubfolks/sub-plugins/plugin.builddate',
         ],
         folders: [],
       }),
@@ -375,7 +375,7 @@ describe('PluginManager._migrateOldFlatFiles', () => {
 
     await pm['_migrateOldFlatFiles']();
 
-    expect(adapter.remove).toHaveBeenCalledWith('.obsidian/plugins/obsidian-together/sub-plugins/plugin.builddate');
+    expect(adapter.remove).toHaveBeenCalledWith('.obsidian/plugins/hubfolks/sub-plugins/plugin.builddate');
   });
 
   it('skips files that do not match .js, .version, or .builddate extensions', async () => {
@@ -383,9 +383,9 @@ describe('PluginManager._migrateOldFlatFiles', () => {
       exists: vi.fn().mockResolvedValue(true),
       list: vi.fn().mockResolvedValue({
         files: [
-          '.obsidian/plugins/obsidian-together/sub-plugins/readme.txt',
-          '.obsidian/plugins/obsidian-together/sub-plugins/config.json',
-          '.obsidian/plugins/obsidian-together/sub-plugins/data.md',
+          '.obsidian/plugins/hubfolks/sub-plugins/readme.txt',
+          '.obsidian/plugins/hubfolks/sub-plugins/config.json',
+          '.obsidian/plugins/hubfolks/sub-plugins/data.md',
         ],
         folders: [],
       }),
@@ -403,11 +403,11 @@ describe('PluginManager._migrateOldFlatFiles', () => {
       exists: vi.fn().mockResolvedValue(true),
       list: vi.fn().mockResolvedValue({
         files: [
-          '.obsidian/plugins/obsidian-together/sub-plugins/old-plugin.js',
-          '.obsidian/plugins/obsidian-together/sub-plugins/readme.txt',
-          '.obsidian/plugins/obsidian-together/sub-plugins/plugin.version',
-          '.obsidian/plugins/obsidian-together/sub-plugins/config.json',
-          '.obsidian/plugins/obsidian-together/sub-plugins/plugin.builddate',
+          '.obsidian/plugins/hubfolks/sub-plugins/old-plugin.js',
+          '.obsidian/plugins/hubfolks/sub-plugins/readme.txt',
+          '.obsidian/plugins/hubfolks/sub-plugins/plugin.version',
+          '.obsidian/plugins/hubfolks/sub-plugins/config.json',
+          '.obsidian/plugins/hubfolks/sub-plugins/plugin.builddate',
         ],
         folders: [],
       }),
@@ -418,9 +418,9 @@ describe('PluginManager._migrateOldFlatFiles', () => {
     await pm['_migrateOldFlatFiles']();
 
     expect(adapter.remove).toHaveBeenCalledTimes(3);
-    expect(adapter.remove).toHaveBeenCalledWith('.obsidian/plugins/obsidian-together/sub-plugins/old-plugin.js');
-    expect(adapter.remove).toHaveBeenCalledWith('.obsidian/plugins/obsidian-together/sub-plugins/plugin.version');
-    expect(adapter.remove).toHaveBeenCalledWith('.obsidian/plugins/obsidian-together/sub-plugins/plugin.builddate');
+    expect(adapter.remove).toHaveBeenCalledWith('.obsidian/plugins/hubfolks/sub-plugins/old-plugin.js');
+    expect(adapter.remove).toHaveBeenCalledWith('.obsidian/plugins/hubfolks/sub-plugins/plugin.version');
+    expect(adapter.remove).toHaveBeenCalledWith('.obsidian/plugins/hubfolks/sub-plugins/plugin.builddate');
   });
 
   it('is a no-op when directory does not exist', async () => {
@@ -443,7 +443,7 @@ describe('PluginManager._migrateOldFlatFiles', () => {
       list: vi.fn().mockResolvedValue({
         files: [],
         folders: [
-          '.obsidian/plugins/obsidian-together/sub-plugins/plugin-subdir',
+          '.obsidian/plugins/hubfolks/sub-plugins/plugin-subdir',
         ],
       }),
       remove: vi.fn().mockResolvedValue(undefined),
@@ -460,7 +460,7 @@ describe('PluginManager._migrateOldFlatFiles', () => {
       exists: vi.fn().mockResolvedValue(true),
       list: vi.fn().mockResolvedValue({
         files: [
-          '.obsidian/plugins/obsidian-together/sub-plugins/plugin.js',
+          '.obsidian/plugins/hubfolks/sub-plugins/plugin.js',
         ],
         folders: [],
       }),
@@ -478,9 +478,9 @@ describe('PluginManager._migrateOldFlatFiles', () => {
       exists: vi.fn().mockResolvedValue(true),
       list: vi.fn().mockResolvedValue({
         files: [
-          '.obsidian/plugins/obsidian-together/sub-plugins/old-plugin.js',
-          '.obsidian/plugins/obsidian-together/sub-plugins/old-plugin.version',
-          '.obsidian/plugins/obsidian-together/sub-plugins/old-plugin.builddate',
+          '.obsidian/plugins/hubfolks/sub-plugins/old-plugin.js',
+          '.obsidian/plugins/hubfolks/sub-plugins/old-plugin.version',
+          '.obsidian/plugins/hubfolks/sub-plugins/old-plugin.builddate',
         ],
         folders: [],
       }),
@@ -499,7 +499,7 @@ describe('PluginManager._migrateOldFlatFiles', () => {
       list: vi.fn().mockResolvedValue({
         files: [],
         folders: [
-          '.obsidian/plugins/obsidian-together/sub-plugins/plugin-new-layout',
+          '.obsidian/plugins/hubfolks/sub-plugins/plugin-new-layout',
         ],
       }),
       remove: vi.fn().mockResolvedValue(undefined),
@@ -532,25 +532,25 @@ describe('resolveUpdateOrder', () => {
 
   it('places dependency before dependent', () => {
     const result = resolveUpdateOrder([
-      info('music-band', ['obsidian-together', 'community']),
-      info('community', ['obsidian-together']),
+      info('music-band', ['hubfolks', 'community']),
+      info('community', ['hubfolks']),
     ]);
     expect(result.map(p => p.id)).toEqual(['community', 'music-band']);
   });
 
   it('resolves three-level chain: community → music-band → behringer-console', () => {
     const result = resolveUpdateOrder([
-      info('behringer-console', ['obsidian-together', 'community', 'music-band']),
-      info('music-band', ['obsidian-together', 'community']),
-      info('community', ['obsidian-together']),
+      info('behringer-console', ['hubfolks', 'community', 'music-band']),
+      info('music-band', ['hubfolks', 'community']),
+      info('community', ['hubfolks']),
     ]);
     expect(result.map(p => p.id)).toEqual(['community', 'music-band', 'behringer-console']);
   });
 
-  it('ignores deps not in the update list (e.g. obsidian-together)', () => {
+  it('ignores deps not in the update list (e.g. hubfolks)', () => {
     const result = resolveUpdateOrder([
-      info('community', ['obsidian-together']),
-      info('games', ['obsidian-together', 'community']),
+      info('community', ['hubfolks']),
+      info('games', ['hubfolks', 'community']),
     ]);
     expect(result.map(p => p.id)).toEqual(['community', 'games']);
   });
@@ -565,8 +565,8 @@ describe('PluginManager.checkDependencies', () => {
   it('returns empty when all deps are loaded', () => {
     const pm = makepm();
     pm['_availablePlugins'] = [
-      { id: 'community', name: 'Community', requires: ['obsidian-together'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
-      { id: 'music-band', name: 'Music Band', requires: ['obsidian-together', 'community'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
+      { id: 'community', name: 'Community', requires: ['hubfolks'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
+      { id: 'music-band', name: 'Music Band', requires: ['hubfolks', 'community'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
     ] as any;
     pm['_loadedPlugins'] = new Map([['community', {}]]);
     expect(pm.checkDependencies('music-band')).toHaveLength(0);
@@ -575,18 +575,18 @@ describe('PluginManager.checkDependencies', () => {
   it('returns missing dep when not loaded', () => {
     const pm = makepm();
     pm['_availablePlugins'] = [
-      { id: 'community', name: 'Community', requires: ['obsidian-together'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
-      { id: 'music-band', name: 'Music Band', requires: ['obsidian-together', 'community'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
+      { id: 'community', name: 'Community', requires: ['hubfolks'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
+      { id: 'music-band', name: 'Music Band', requires: ['hubfolks', 'community'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
     ] as any;
     pm['_loadedPlugins'] = new Map(); // community NOT loaded
     const missing = pm.checkDependencies('music-band');
     expect(missing.map((p: any) => p.id)).toEqual(['community']);
   });
 
-  it('ignores obsidian-together (always satisfied)', () => {
+  it('ignores hubfolks (always satisfied)', () => {
     const pm = makepm();
     pm['_availablePlugins'] = [
-      { id: 'community', name: 'Community', requires: ['obsidian-together'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
+      { id: 'community', name: 'Community', requires: ['hubfolks'], description: '', version: '1.0.0', checksum: '', size: 0, previewChecksum: null, previewUrls: {} },
     ] as any;
     pm['_loadedPlugins'] = new Map();
     expect(pm.checkDependencies('community')).toHaveLength(0);

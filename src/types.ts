@@ -37,7 +37,7 @@ export interface PluginManagerAPI {
 }
 
 /**
- * Shared API surface exposed on `app.together` by the Obsidian Together core plugin.
+ * Shared API surface exposed on `app.together` by the HubFolks core plugin.
  * All ecosystem plugins access auth state and the event bus through this interface.
  */
 export interface TogetherAPI {

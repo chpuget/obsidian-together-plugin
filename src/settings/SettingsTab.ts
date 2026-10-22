@@ -1,8 +1,8 @@
 import { App, Notice, Platform, PluginSettingTab, Setting } from "obsidian";
-import type ObsidianTogetherPlugin from "../main";
+import type HubFolksPlugin from "../main";
 
 const LOCAL_URL = "http://localhost:3001";
-const PROD_URL  = "https://obsidian-together-production.up.railway.app";
+const PROD_URL  = "https://api.hubfolks.com";
 
 const CARD_STYLE_ID = "together-settings-card-style";
 
@@ -37,7 +37,7 @@ export class TogetherSettingTab extends PluginSettingTab {
     this.display();
   };
 
-  constructor(app: App, private plugin: ObsidianTogetherPlugin) {
+  constructor(app: App, private plugin: HubFolksPlugin) {
     super(app, plugin);
     this.plugin.togetherAPI.events.on("together:relogin-required", this.reloginHandler);
   }
@@ -50,7 +50,7 @@ export class TogetherSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     injectCardStyles();
-    containerEl.createEl("h2", { text: "Obsidian Together" });
+    containerEl.createEl("h2", { text: "HubFolks" });
 
     if (this.plugin.togetherAPI.auth.isLoggedIn) {
       this.renderLoggedIn(containerEl);
@@ -259,10 +259,10 @@ export class TogetherSettingTab extends PluginSettingTab {
     if (this.plugin.settings.devMode) {
       new Setting(card)
         .setName("Repo root path")
-        .setDesc("Absolute path to the obsidian-together monorepo root.")
+        .setDesc("Absolute path to the hubfolks monorepo root.")
         .addText(t => {
           t.setValue(this.plugin.settings.devRepoRoot);
-          t.setPlaceholder("/Users/you/obsidian-together");
+          t.setPlaceholder("/Users/you/hubfolks");
           t.onChange((v) => {
             this.plugin.settings.devRepoRoot = v.trim();
             this.plugin.saveSettings();

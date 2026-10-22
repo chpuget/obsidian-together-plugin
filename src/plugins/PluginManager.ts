@@ -102,7 +102,7 @@ export class PluginManager {
     if (!info) return [];
     const loaded = new Set(this.getLoadedPluginIds());
     return (info.requires ?? [])
-      .filter(dep => dep !== 'obsidian-together')
+      .filter(dep => dep !== 'hubfolks')
       .map(dep => this._availablePlugins.find(p => p.id === dep))
       .filter((p): p is PluginInfo => !!p && !loaded.has(p.id));
   }
@@ -167,7 +167,7 @@ export class PluginManager {
     if (!this._previewCache) {
       const adapter = (this.opts.app.vault.adapter as any);
       const base: string = adapter.basePath ?? adapter.getBasePath?.() ?? '';
-      const vaultBase = '.obsidian/plugins/obsidian-together/previews';
+      const vaultBase = '.obsidian/plugins/hubfolks/previews';
       this._previewCache = new PreviewCache(
         base ? `${base}/${vaultBase}` : null,
         undefined,
@@ -459,7 +459,7 @@ export class PluginManager {
       version: info?.version ?? '0.0.0',
       minAppVersion: '1.0.0',
       description: info?.description ?? '',
-      author: 'Obsidian Together',
+      author: 'HubFolks',
       authorUrl: '',
       isDesktopOnly: false,
     };
@@ -556,7 +556,7 @@ export class PluginManager {
 
   private _subPluginsDir(): string {
     // vault-relative path — works on both desktop and mobile via vault.adapter
-    return '.obsidian/plugins/obsidian-together/sub-plugins';
+    return '.obsidian/plugins/hubfolks/sub-plugins';
   }
 
   private _bundlePath(id: string): string {
@@ -594,7 +594,7 @@ export class PluginManager {
 
   private async _migrateOldFlatFiles(): Promise<void> {
     const adapter = this.opts.app.vault.adapter;
-    const dir = '.obsidian/plugins/obsidian-together/sub-plugins';
+    const dir = '.obsidian/plugins/hubfolks/sub-plugins';
     if (!(await adapter.exists(dir))) return;
     const { files } = await adapter.list(dir);
     for (const filePath of files) {
@@ -636,7 +636,7 @@ export class PluginManager {
     if (serverIds.size === 0) return;
     const adapter = this.opts.app?.vault?.adapter;
     if (!adapter) return;
-    const previewsDir = '.obsidian/plugins/obsidian-together/previews';
+    const previewsDir = '.obsidian/plugins/hubfolks/previews';
     if (!(await adapter.exists(previewsDir))) return;
     const { folders } = await adapter.list(previewsDir);
     for (const folderPath of folders) {

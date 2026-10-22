@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { applyCoreLegacyMigration } from "./settings-migration";
 
 const LOCAL_URL = "http://localhost:3001";
-const PROD_URL  = "https://obsidian-together-production.up.railway.app";
+const PROD_URL  = "https://api.hubfolks.com";
 
 describe("applyCoreLegacyMigration", () => {
   it("returns the input unchanged when accounts array already exists", () => {
@@ -54,5 +54,36 @@ describe("applyCoreLegacyMigration", () => {
     const input = {};
     const result = applyCoreLegacyMigration(input);
     expect(result).toEqual({});
+  });
+});
+
+describe('server URL migration (Obsidian Together → HubFolks)', () => {
+  const OLD = 'https://obsidian-together-production.up.railway.app';
+  const NEW = 'https://api.hubfolks.com';
+
+  it('rewrites old Railway URL in all accounts to new api URL', () => {
+    const raw = { accounts: [{ username: 'alice', serverUrl: OLD, token: 'tok', userId: '' }], activeAccountIndex: 0 };
+    const out = applyCoreLegacyMigration(raw);
+    expect((out.accounts as any[])[0].serverUrl).toBe(NEW);
+  });
+
+  it('is idempotent — already-new URL unchanged', () => {
+    const raw = { accounts: [{ username: 'alice', serverUrl: NEW, token: 'tok', userId: '' }], activeAccountIndex: 0 };
+    const before = JSON.stringify(raw);
+    applyCoreLegacyMigration(raw);
+    expect(JSON.stringify(raw)).toBe(before);
+  });
+
+  it('leaves custom self-hosted URLs alone', () => {
+    const CUSTOM = 'https://my.selfhosted.example';
+    const raw = { accounts: [{ username: 'alice', serverUrl: CUSTOM, token: 'tok', userId: '' }], activeAccountIndex: 0 };
+    applyCoreLegacyMigration(raw);
+    expect((raw.accounts as any[])[0].serverUrl).toBe(CUSTOM);
+  });
+
+  it('handles the legacy flat format AND the URL rewrite together', () => {
+    const raw = { authToken: 'tok', username: 'alice', serverUrl: OLD, localServer: false };
+    const out = applyCoreLegacyMigration(raw);
+    expect((out.accounts as any[])[0].serverUrl).toBe(NEW);
   });
 });
