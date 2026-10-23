@@ -50,8 +50,10 @@ export class WebAuthService {
 
   constructor(private deps: WebAuthDeps) {}
 
+  /** Never hand back the bare global: `this.fetch(url)` would call it with this service as
+   *  `this`, which browsers (Obsidian included) reject with "Illegal invocation". */
   private get fetch(): typeof fetch {
-    return this.deps.fetch ?? fetch;
+    return this.deps.fetch ?? ((input, init) => fetch(input, init));
   }
 
   private now(): number {

@@ -235,3 +235,25 @@ describe("WebAuthService.getCapabilities", () => {
     expect(await t.service.getCapabilities(SERVER)).toEqual({ webFlow: true, webUrl: WEB });
   });
 });
+
+describe("WebAuthService default fetch", () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = realFetch; });
+
+  it("calls the global fetch unbound, as browsers require (no Illegal invocation)", async () => {
+    // Chromium/Obsidian throw "Illegal invocation" when fetch runs with a foreign `this`.
+    globalThis.fetch = function (this: unknown, url: string) {
+      if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
+      return Promise.resolve(res(200, { webFlow: true, webUrl: WEB }));
+    } as typeof fetch;
+    const service = new WebAuthService({
+      authManager: {} as AuthManager,
+      getSettings: () => ({ accounts: [], activeAccountIndex: -1 }) as unknown as TogetherSettings,
+      saveSettings: async () => {},
+      emit: () => {},
+      openUrl: () => {},
+      vaultName: "v",
+    });
+    expect(await service.getCapabilities(SERVER)).toEqual({ webFlow: true, webUrl: WEB });
+  });
+});
