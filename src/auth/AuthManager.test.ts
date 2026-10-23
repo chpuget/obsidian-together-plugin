@@ -160,3 +160,57 @@ describe("AuthManager.switchAccount offline detection", () => {
     expect(auth.getState().offline).toBeFalsy();
   });
 });
+
+describe("AuthManager.storeSession", () => {
+  const session = {
+    token: "jwt-1",
+    refreshToken: "rt-new",
+    user: { id: "u2", username: "bob", displayName: "Bob", isAdmin: false },
+    availablePlugins: [],
+    branch: "prod",
+  };
+
+  it("adds the account, makes it active and logs in, without a stored password", () => {
+    const settings = makeSettings();
+    const auth = new AuthManager(() => settings);
+    const account = auth.storeSession(session, URL);
+    expect(account).toMatchObject({ username: "bob", userId: "u2", token: "jwt-1", refreshToken: "rt-new", serverUrl: URL });
+    expect(account.encryptedPassword).toBeUndefined();
+    expect(settings.accounts).toHaveLength(2);
+    expect(settings.activeAccountIndex).toBe(1);
+    expect(auth.getState()).toMatchObject({ isLoggedIn: true, username: "bob", token: "jwt-1", serverUrl: URL });
+  });
+
+  it("replaces an existing account for the same user and server", () => {
+    const settings = makeSettings();
+    const auth = new AuthManager(() => settings);
+    auth.storeSession({ ...session, user: { id: "u1", username: "alice" } }, URL);
+    expect(settings.accounts).toHaveLength(1);
+    expect(settings.accounts[0].token).toBe("jwt-1");
+    expect(settings.activeAccountIndex).toBe(0);
+  });
+});
+
+describe("AuthManager.login", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("stores the session returned by /auth/login", async () => {
+    const settings = { accounts: [], activeAccountIndex: -1 } as unknown as TogetherSettings;
+    const auth = new AuthManager(() => settings);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(201, {
+      token: "jwt-l", refreshToken: "rt-l", user: { id: "u3", username: "carol" }, availablePlugins: [],
+    })));
+    const account = await auth.login("carol", "pw", URL);
+    expect(account).toMatchObject({ username: "carol", token: "jwt-l", refreshToken: "rt-l" });
+    expect(settings.activeAccountIndex).toBe(0);
+    expect(auth.getState().isLoggedIn).toBe(true);
+  });
+
+  it("throws on 401 without touching saved accounts", async () => {
+    const settings = makeSettings();
+    const auth = new AuthManager(() => settings);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(401)));
+    await expect(auth.login("alice", "bad", URL)).rejects.toThrow("Invalid username or password");
+    expect(settings.accounts[0].token).toBe("old-jwt");
+  });
+});

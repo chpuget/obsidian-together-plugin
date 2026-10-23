@@ -72,6 +72,27 @@ export interface TogetherAPI {
    *  Optional so older versions of plugin-core don't break sub-plugins. */
   createLogger?(pluginId: string): Logger;
   pluginManager?: PluginManagerAPI;
+  /** Sign in (or sign up) in the browser; the session comes back via the
+   *  `obsidian://hubfolks-auth` callback or by polling. Resolves once signed in and
+   *  `together:account-switched` was emitted; rejects on cancel or expiry. */
+  startWebSignIn(mode: 'signin' | 'signup'): Promise<void>;
+  /** Whether the server offers the browser sign-in; `'unreachable'` when offline. */
+  getAuthCapabilities(): Promise<AuthCapabilities | 'unreachable'>;
+}
+
+/** Session returned by `/auth/login`, `/auth/app/token` and an approved `/auth/app/poll`. */
+export interface LoginResponse {
+  token: string;
+  refreshToken?: string;
+  user: { id: string; username: string; displayName?: string; isAdmin?: boolean };
+  availablePlugins?: unknown[];
+  branch?: string;
+}
+
+/** `GET /auth/capabilities`. Old servers (404) are reported as `{ webFlow: false, webUrl: "" }`. */
+export interface AuthCapabilities {
+  webFlow: boolean;
+  webUrl: string;
 }
 
 export interface AuthState {

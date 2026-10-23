@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS } from "./types";
 import { Logger } from "./logger";
 import { FileLogger } from "./file-logger";
 import { AuthManager } from "./auth/AuthManager";
+import { AUTH_PROTOCOL_ACTION, WebAuthService } from "./auth/WebAuthService";
 import { PluginManager } from "./plugins/PluginManager";
 import { TogetherSettingTab } from "./settings/SettingsTab";
 import { applyCoreLegacyMigration } from "./settings-migration";
@@ -13,6 +14,8 @@ import { applyCoreLegacyMigration } from "./settings-migration";
 const TOKEN_CHECK_INTERVAL_MS = 60 * 1000;
 /** Renew the JWT once less than this remains before expiry. */
 const TOKEN_RENEW_MARGIN_MS = 24 * 60 * 60 * 1000;
+/** Server used by the browser sign-in when no account was ever saved (same default as the login form). */
+const DEFAULT_SERVER_URL = "https://api.hubfolks.com";
 
 // Augment the Obsidian App type so TypeScript knows about app.together
 declare module "obsidian" {
@@ -24,6 +27,7 @@ declare module "obsidian" {
 export default class HubFolksPlugin extends Plugin {
   settings!: TogetherSettings;
   authManager!: AuthManager;
+  webAuth!: WebAuthService;
   pluginManager!: PluginManager;
   logger!: Logger;
   fileLogger: FileLogger | null = null;
@@ -47,6 +51,16 @@ export default class HubFolksPlugin extends Plugin {
     this.logger = new Logger("hubfolks", () => this.getTraceLevel("hubfolks"));
 
     this.authManager = new AuthManager(() => this.settings);
+    this.webAuth = new WebAuthService({
+      authManager: this.authManager,
+      getSettings: () => this.settings,
+      saveSettings: async () => this.saveSettings(),
+      emit: (event, payload) => this.eventBus.emit(event, payload),
+      openUrl: (url) => { window.open(url); },
+      vaultName: this.app.vault.getName(),
+    });
+    this.registerObsidianProtocolHandler(AUTH_PROTOCOL_ACTION, (params) =>
+      void this.webAuth.handleCallback({ code: params.code, state: params.state, error: params.error }));
 
     this.pluginManager = new PluginManager({
       app: this.app,
@@ -120,6 +134,11 @@ export default class HubFolksPlugin extends Plugin {
         if (ok && !wasLoggedIn) this.emitAccountSwitched(true);
         return ok;
       },
+
+      startWebSignIn: (mode: 'signin' | 'signup'): Promise<void> =>
+        this.webAuth.start(mode, this.webSignInServerUrl()),
+
+      getAuthCapabilities: () => this.webAuth.getCapabilities(this.webSignInServerUrl()),
 
       createLogger: (pluginId: string) =>
         new Logger(pluginId, () => this.getTraceLevel(pluginId)),
@@ -220,6 +239,12 @@ export default class HubFolksPlugin extends Plugin {
     this.eventBus.emit("together:account-switched", { username: s.username, serverUrl: s.serverUrl, reconnected });
   }
 
+  /** The active (or last selected) account's server, else the production server. */
+  private webSignInServerUrl(): string {
+    const account = this.settings.accounts[this.settings.activeAccountIndex];
+    return account?.serverUrl || this.authManager.getState().serverUrl || DEFAULT_SERVER_URL;
+  }
+
   private reconnecting = false;
 
   /** Renews the JWT when close to expiry, or reconnects a session that is offline
@@ -255,6 +280,7 @@ export default class HubFolksPlugin extends Plugin {
   }
 
   onunload(): void {
+    this.webAuth?.cancel();
     this.fileLogger?.stop();
     this.fileLogger = null;
     this.pluginManager.unloadAll();

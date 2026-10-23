@@ -1,5 +1,5 @@
 import { Platform } from "obsidian";
-import type { AuthState, SavedAccount, TogetherSettings } from "../types";
+import type { AuthState, LoginResponse, SavedAccount, TogetherSettings } from "../types";
 
 type SafeStorage = {
   isEncryptionAvailable(): boolean;
@@ -68,12 +68,15 @@ export class AuthManager {
       throw new Error(Array.isArray(msg) ? msg.join(", ") : String(msg));
     }
 
-    const data = await response.json() as {
-      token: string;
-      refreshToken?: string;
-      user: { id: string; username: string; displayName?: string; isAdmin?: boolean };
-      branch?: string;
-    };
+    const data = await response.json() as LoginResponse;
+    return this.storeSession(data, serverUrl, password);
+  }
+
+  /** Saves a session returned by the server (password login or browser sign-in):
+   *  upserts the account in settings.accounts, sets it active and marks the state logged in.
+   *  The password is encrypted and kept only when given (browser sign-in has none).
+   *  Caller must saveSettings() and emit "together:account-switched". */
+  storeSession(data: LoginResponse, serverUrl: string, password?: string): SavedAccount {
     const { token, user } = data;
 
     const settings = this.getSettings();
@@ -89,9 +92,11 @@ export class AuthManager {
       branch: data.branch,
     };
 
-    const storage = getSafeStorage();
-    if (storage?.isEncryptionAvailable()) {
-      account.encryptedPassword = storage.encryptString(password).toString('base64');
+    if (password !== undefined) {
+      const storage = getSafeStorage();
+      if (storage?.isEncryptionAvailable()) {
+        account.encryptedPassword = storage.encryptString(password).toString('base64');
+      }
     }
 
     if (idx >= 0) {
