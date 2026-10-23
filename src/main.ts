@@ -9,6 +9,8 @@ import { AUTH_PROTOCOL_ACTION, WebAuthService } from "./auth/WebAuthService";
 import { PluginManager } from "./plugins/PluginManager";
 import { TogetherSettingTab } from "./settings/SettingsTab";
 import { applyCoreLegacyMigration } from "./settings-migration";
+import { WelcomeModal } from "./onboarding/WelcomeModal";
+import { shouldShowWelcome, needsFirstSetup, loginLinkAction } from "./onboarding/first-run";
 
 /** Cheap when online (local JWT exp check); also the retry pace of an offline session. */
 const TOKEN_CHECK_INTERVAL_MS = 60 * 1000;
@@ -36,6 +38,7 @@ export default class HubFolksPlugin extends Plugin {
   togetherAPI!: TogetherAPI;
 
   private eventBus = new EventEmitter();
+  private welcomeModal: WelcomeModal | null = null;
   private registeredExtensions = new Map<string, unknown>();
   private traceConfig = new Map<string, TraceLevel>();
   private debugModeActive = false;
@@ -62,6 +65,12 @@ export default class HubFolksPlugin extends Plugin {
     this.registerObsidianProtocolHandler(AUTH_PROTOCOL_ACTION, (params) =>
       void this.webAuth.handleCallback({ code: params.code, state: params.state, error: params.error }));
 
+    this.registerObsidianProtocolHandler("hubfolks", (params) => {
+      if (params.action !== "login") return;
+      if (loginLinkAction(this.authManager.getState().isLoggedIn) === "welcome") this.openWelcome();
+      else this.openSettingsTab();
+    });
+
     this.pluginManager = new PluginManager({
       app: this.app,
       getSettings: () => this.settings,
@@ -87,6 +96,7 @@ export default class HubFolksPlugin extends Plugin {
     this.togetherAPI = {
       version: this.manifest.version,
       auth: undefined as any, // overridden below via Object.defineProperty
+      isDevMode: undefined as any, // overridden via defineProperty below
       events: this.eventBus,
       getPlugin: (id: string) => this.registeredExtensions.get(id),
 
@@ -189,10 +199,17 @@ export default class HubFolksPlugin extends Plugin {
     this.eventBus.on('together:account-switched', async ({ username }: { username: string | null }) => {
       if (this.app.workspace.layoutReady) this.loadTraceConfig();
       if (username) {
+        const setupNotice = needsFirstSetup(this.pluginManager.getInstalledVersions())
+          ? new Notice('Setting up HubFolks…', 0)
+          : null;
         try {
           await this.pluginManager.ensurePluginsLoaded();
           this.eventBus.emit('community:plugins-refreshed');
-        } catch (e) { this.logger.error('PluginManager.ensurePluginsLoaded failed:', e); }
+        } catch (e) {
+          this.logger.error('PluginManager.ensurePluginsLoaded failed:', e);
+        } finally {
+          setupNotice?.hide();
+        }
       }
     });
 
@@ -213,6 +230,7 @@ export default class HubFolksPlugin extends Plugin {
 
     // Load trace config once vault is ready, then watch for user note changes
     this.app.workspace.onLayoutReady(() => {
+      if (shouldShowWelcome(this.settings)) this.openWelcome();
       const hasDebugFile = this.app.vault.getFiles()
         .some(f => f.path.toLowerCase() === "debug.md");
       if (hasDebugFile) {
@@ -232,6 +250,21 @@ export default class HubFolksPlugin extends Plugin {
     });
 
     this.logger.info("loaded (v" + this.manifest.version + ")");
+  }
+
+  /** Opens the welcome sign-in window; never two at once. */
+  private openWelcome(): void {
+    if (this.welcomeModal) return;
+    const modal = new WelcomeModal(this.app, this);
+    this.welcomeModal = modal;
+    modal.onClosed = () => { if (this.welcomeModal === modal) this.welcomeModal = null; };
+    modal.open();
+  }
+
+  openSettingsTab(): void {
+    const setting = (this.app as any).setting;
+    setting.open();
+    setting.openTabById(this.manifest.id);
   }
 
   /** `reconnected`: same session restored silently (network back) — listeners should

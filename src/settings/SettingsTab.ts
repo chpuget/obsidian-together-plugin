@@ -28,7 +28,7 @@ function injectCardStyles(): void {
   document.head.appendChild(style);
 }
 
-const OFFLINE_MESSAGE = "You're offline — this needs a connection";
+export const OFFLINE_MESSAGE = "You're offline — this needs a connection";
 
 export class TogetherSettingTab extends PluginSettingTab {
 
