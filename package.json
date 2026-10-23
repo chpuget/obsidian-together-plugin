@@ -1,6 +1,6 @@
 {
   "name": "hubfolks-plugin",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "HubFolks — Layer 1 core plugin",
   "scripts": {
     "build": "node esbuild.config.mjs",
