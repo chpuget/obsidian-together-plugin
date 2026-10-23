@@ -28,7 +28,12 @@ function injectCardStyles(): void {
   document.head.appendChild(style);
 }
 
+const OFFLINE_MESSAGE = "You're offline — this needs a connection";
+
 export class TogetherSettingTab extends PluginSettingTab {
+
+  /** Bumped on every display() so a late capabilities answer never paints a stale view. */
+  private _renderId = 0;
 
   private _lastUsername: string | null = null;
 
@@ -51,11 +56,24 @@ export class TogetherSettingTab extends PluginSettingTab {
     containerEl.empty();
     injectCardStyles();
     containerEl.createEl("h2", { text: "HubFolks" });
+    const renderId = ++this._renderId;
 
     if (this.plugin.togetherAPI.auth.isLoggedIn) {
       this.renderLoggedIn(containerEl);
     } else {
-      this.renderLoginForm(containerEl);
+      // Render the password form right away; swap it once the server's capabilities are known.
+      const authEl = containerEl.createDiv();
+      this.renderLoginForm(authEl);
+      void this.plugin.togetherAPI.getAuthCapabilities().then(caps => {
+        if (renderId !== this._renderId) return;
+        if (caps === "unreachable") {
+          authEl.empty();
+          this.renderWebSignIn(authEl, true);
+        } else if (caps.webFlow) {
+          authEl.empty();
+          this.renderWebSignIn(authEl, false);
+        }
+      }, () => { /* capabilities unknown: keep the password form */ });
     }
 
     if (Platform.isDesktop) {
@@ -106,6 +124,45 @@ export class TogetherSettingTab extends PluginSettingTab {
           );
       }
     }
+  }
+
+  // ── Browser sign-in ───────────────────────────────────────────────────────────
+
+  private renderWebSignIn(root: HTMLElement, offline: boolean): void {
+    const card = root.createDiv({ cls: "together-card" });
+    const errorEl = card.createEl("p");
+    errorEl.style.cssText = "display:none; margin:0; padding:2px 12px 6px; font-size:var(--font-ui-small); color:var(--text-error);";
+
+    const row = new Setting(card);
+    const start = (mode: "signin" | "signup") => {
+      errorEl.style.display = "none";
+      row.clear();
+      row.setName("Waiting for browser…")
+        .addButton(btn => btn.setButtonText("Cancel").onClick(() => this.plugin.togetherAPI.cancelWebSignIn?.()));
+      this.plugin.togetherAPI.startWebSignIn(mode).then(
+        () => this.display(),
+        (err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          // A cancel, or a newer display(), leaves nothing to report.
+          if (msg !== "Cancelled") {
+            errorEl.textContent = msg;
+            errorEl.style.display = "";
+          }
+          this.renderWebButtons(row, offline, start);
+        },
+      );
+    };
+    this.renderWebButtons(row, offline, start);
+    if (offline) {
+      const note = card.createEl("p", { text: OFFLINE_MESSAGE });
+      note.style.cssText = "margin:0; padding:2px 12px 6px; font-size:var(--font-ui-small); color:var(--text-muted);";
+    }
+  }
+
+  private renderWebButtons(row: Setting, offline: boolean, start: (mode: "signin" | "signup") => void): void {
+    row.clear();
+    row.addButton(btn => btn.setButtonText("Sign in").setCta().setDisabled(offline).onClick(() => start("signin")))
+      .addButton(btn => btn.setButtonText("Create an account").setDisabled(offline).onClick(() => start("signup")));
   }
 
   // ── Login form ────────────────────────────────────────────────────────────────
