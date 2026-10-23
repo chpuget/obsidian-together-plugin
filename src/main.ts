@@ -10,7 +10,7 @@ import { PluginManager } from "./plugins/PluginManager";
 import { TogetherSettingTab } from "./settings/SettingsTab";
 import { applyCoreLegacyMigration } from "./settings-migration";
 import { WelcomeModal } from "./onboarding/WelcomeModal";
-import { shouldShowWelcome, needsFirstSetup, loginLinkAction } from "./onboarding/first-run";
+import { shouldShowWelcome, needsFirstSetup, loginLinkAction, isLoginLink } from "./onboarding/first-run";
 
 /** Cheap when online (local JWT exp check); also the retry pace of an offline session. */
 const TOKEN_CHECK_INTERVAL_MS = 60 * 1000;
@@ -64,12 +64,6 @@ export default class HubFolksPlugin extends Plugin {
     });
     this.registerObsidianProtocolHandler(AUTH_PROTOCOL_ACTION, (params) =>
       void this.webAuth.handleCallback({ code: params.code, state: params.state, error: params.error }));
-
-    this.registerObsidianProtocolHandler("hubfolks", (params) => {
-      if (params.action !== "login") return;
-      if (loginLinkAction(this.authManager.getState().isLoggedIn) === "welcome") this.openWelcome();
-      else this.openSettingsTab();
-    });
 
     this.pluginManager = new PluginManager({
       app: this.app,
@@ -172,6 +166,12 @@ export default class HubFolksPlugin extends Plugin {
 
     // Expose on app.together
     this.app.together = this.togetherAPI;
+
+    this.registerObsidianProtocolHandler("hubfolks", (params) => {
+      if (!isLoginLink(params)) return;
+      if (loginLinkAction(this.authManager.getState().isLoggedIn) === "welcome") this.openWelcome();
+      else this.openSettingsTab();
+    });
 
     // Block automatic file creation when clicking unresolved links.
     // Obsidian's default openLinkText creates an empty file when the target doesn't
@@ -315,6 +315,7 @@ export default class HubFolksPlugin extends Plugin {
   }
 
   onunload(): void {
+    this.welcomeModal?.close();
     this.webAuth?.cancel();
     this.fileLogger?.stop();
     this.fileLogger = null;

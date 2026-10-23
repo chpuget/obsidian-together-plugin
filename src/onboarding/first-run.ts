@@ -3,7 +3,7 @@ import type { AuthCapabilities, TogetherSettings } from "../types";
 /** Where the welcome flow sends the user to sign in. */
 export type WelcomeMode = "web" | "offline" | "settings";
 
-/** What the `obsidian://hubfolks?action=login` link should open. */
+/** What the `obsidian://hubfolks?open=login` link should open. */
 export type LoginAction = "welcome" | "settings";
 
 /** The welcome modal is shown until at least one account is saved. */
@@ -26,4 +26,12 @@ export function needsFirstSetup(installed: { id: string }[]): boolean {
 /** Logged-out users get the welcome flow; logged-in users go straight to settings. */
 export function loginLinkAction(isLoggedIn: boolean): LoginAction {
   return isLoggedIn ? "settings" : "welcome";
+}
+
+/**
+ * True for the `obsidian://hubfolks?open=login` link. Obsidian overwrites `action`
+ * with the URI host, so the discriminator must be a different parameter.
+ */
+export function isLoginLink(params: Record<string, string | undefined>): boolean {
+  return params.open === "login";
 }

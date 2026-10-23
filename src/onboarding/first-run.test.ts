@@ -4,6 +4,7 @@ import {
   welcomeMode,
   needsFirstSetup,
   loginLinkAction,
+  isLoginLink,
 } from "./first-run";
 
 describe("shouldShowWelcome", () => {
@@ -23,4 +24,9 @@ describe("needsFirstSetup", () => {
 describe("loginLinkAction", () => {
   it("welcome when logged out", () => expect(loginLinkAction(false)).toBe("welcome"));
   it("settings when logged in", () => expect(loginLinkAction(true)).toBe("settings"));
+});
+describe("isLoginLink", () => {
+  it("true for open=login (real Obsidian shape)", () => expect(isLoginLink({ action: "hubfolks", open: "login" })).toBe(true));
+  it("false without open", () => expect(isLoginLink({ action: "hubfolks" })).toBe(false));
+  it("false for another open value", () => expect(isLoginLink({ action: "hubfolks", open: "other" })).toBe(false));
 });
