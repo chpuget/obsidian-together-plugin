@@ -3,3 +3,4 @@ data.json
 node_modules/
 dist/
 pnpm-workspace.yaml
+.worktrees/
