@@ -272,6 +272,8 @@ export class PluginManager {
     await this._loadInstalledVersions();
     this.logger.verbose(`[PluginManager] ensurePluginsLoaded installed versions: ${JSON.stringify(this._installedVersions)}`);
 
+    await this._cleanupGhostCommunityPluginEntries();
+
     // community is always required
     const tcInfo = this._availablePlugins.find((p) => p.id === 'community');
     if (tcInfo) {
@@ -374,6 +376,45 @@ export class PluginManager {
       this._installedBuildDates[info.id] = info.buildDate;
     }
     this._installedVersions[info.id] = info.version;
+  }
+
+  /**
+   * Remove leftover entries from Obsidian's community-plugins.json for known
+   * HubFolks sub-plugin ids that have no top-level plugin folder (ghosts).
+   * Never throws; never creates the file.
+   */
+  private async _cleanupGhostCommunityPluginEntries(): Promise<void> {
+    try {
+      const adapter = this.opts.app.vault.adapter;
+      const path = '.obsidian/community-plugins.json';
+      if (!(await adapter.exists(path))) return;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(await adapter.read(path));
+      } catch (e) {
+        this.logger.verbose('[PluginManager] cleanup: community-plugins.json unreadable/unparseable, skipping', e);
+        return;
+      }
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        this.logger.verbose('[PluginManager] cleanup: community-plugins.json empty or not an array, skipping');
+        return;
+      }
+      const known = new Set(this._availablePlugins.map((p) => p.id));
+      const kept: unknown[] = [];
+      for (const entry of parsed) {
+        if (typeof entry === 'string' && known.has(entry)
+          && !(await adapter.exists(`.obsidian/plugins/${entry}/manifest.json`))) {
+          this.logger.info(`[PluginManager] cleanup: removed ghost entry '${entry}' from community-plugins.json`);
+          continue;
+        }
+        kept.push(entry);
+      }
+      if (kept.length !== parsed.length) {
+        await adapter.write(path, JSON.stringify(kept, null, 2) + '\n');
+      }
+    } catch (e) {
+      this.logger.warn('[PluginManager] cleanup: ghost community-plugins cleanup failed', e);
+    }
   }
 
   private async extractPluginZip(id: string, zipBuffer: ArrayBuffer): Promise<void> {
